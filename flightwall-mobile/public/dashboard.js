@@ -196,6 +196,60 @@ async function fetchTAF(icao) {
   return null;
 }
 
+// Fetch historical flights for gateway
+async function fetchHistoricalFlights(icao) {
+  const container = document.getElementById('historical-content');
+  const totalBadge = document.getElementById('history-total');
+  
+  if (!container) return;
+  
+  container.innerHTML = '<div class="no-history">Loading history...</div>';
+  
+  try {
+    // Convert ICAO to IATA (remove K prefix for US airports)
+    const iata = icao.startsWith('K') ? icao.substring(1) : icao;
+    
+    const response = await fetch(`/api/airport/${iata}/history`);
+    const data = await response.json();
+    
+    if (data.success && data.carrierStats) {
+      const stats = data.carrierStats;
+      const carriers = Object.entries(stats)
+        .filter(([code]) => CONFIG.CARRIER_FILTER.includes(code))
+        .sort((a, b) => b[1].count - a[1].count);
+      
+      if (carriers.length === 0) {
+        container.innerHTML = '<div class="no-history">No filtered carriers in last 24h</div>';
+        totalBadge.textContent = '0';
+        return;
+      }
+      
+      const total = carriers.reduce((sum, [, v]) => sum + v.count, 0);
+      totalBadge.textContent = total;
+      
+      container.innerHTML = `
+        <div class="carrier-stats">
+          ${carriers.map(([code, info]) => `
+            <div class="carrier-row">
+              <span class="carrier-code">${code}</span>
+              <span class="carrier-name">${info.name || 'Unknown'}</span>
+              <span class="flight-count">${info.count}</span>
+              <span class="flight-label">flights</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    } else {
+      container.innerHTML = '<div class="no-history">History unavailable</div>';
+      totalBadge.textContent = '0';
+    }
+  } catch (error) {
+    console.error('Failed to fetch history:', error);
+    container.innerHTML = '<div class="no-history">Failed to load history</div>';
+    totalBadge.textContent = '0';
+  }
+}
+
 // Display TAF in gateway panel
 async function displayTAF(icao) {
   const tafContainer = document.getElementById('taf-display');
@@ -287,8 +341,9 @@ function initGatewaySelector() {
   toggleCategory('Hubs');
   highlightSelectedGateway('KCVG');
   
-  // Load TAF for default gateway
+  // Load TAF and history for default gateway
   displayTAF('KCVG');
+  fetchHistoricalFlights('KCVG');
 }
 
 // Toggle category dropdown
@@ -310,6 +365,8 @@ function selectGateway(icao) {
   fetchFlights();
   // Fetch TAF for this gateway
   displayTAF(icao);
+  // Fetch historical flights
+  fetchHistoricalFlights(icao);
 }
 
 // Select entire region

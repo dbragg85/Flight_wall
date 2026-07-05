@@ -333,6 +333,97 @@ app.get('/api/radar', async (req, res) => {
 });
 
 /**
+ * GET /api/airport/:code/history
+ * Returns 24-hour flight history aggregated by carrier
+ */
+app.get('/api/airport/:code/history', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const apiKey = process.env.RAPIDAPI_KEY;
+    
+    if (!apiKey) {
+      return res.json({ success: false, error: 'API key not configured' });
+    }
+    
+    // Calculate 24-hour window
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    const fromTime = yesterday.toISOString().replace('Z', '');
+    const toTime = now.toISOString().replace('Z', '');
+    
+    console.log(`📊 Fetching 24h history for ${code}`);
+    
+    const axios = require('axios');
+    const response = await axios.get(
+      `https://aerodatabox.p.rapidapi.com/flights/airports/iata/${code}/${fromTime}/${toTime}`,
+      {
+        headers: {
+          'x-rapidapi-key': apiKey,
+          'x-rapidapi-host': 'aerodatabox.p.rapidapi.com',
+        },
+        params: {
+          direction: 'Both',
+          withCancelled: false,
+          withCodeshared: false,
+        },
+        timeout: 15000,
+      }
+    );
+    
+    const data = response.data;
+    const allFlights = [...(data.departures || []), ...(data.arrivals || [])];
+    
+    // Aggregate by carrier (ICAO code)
+    const carrierStats = {};
+    
+    allFlights.forEach(flight => {
+      const icao = flight.airline?.icao;
+      if (!icao) return;
+      
+      if (!carrierStats[icao]) {
+        carrierStats[icao] = {
+          name: flight.airline?.name || 'Unknown',
+          iata: flight.airline?.iata || null,
+          count: 0,
+          flights: [],
+        };
+      }
+      
+      carrierStats[icao].count++;
+      carrierStats[icao].flights.push({
+        number: flight.number,
+        callsign: flight.callSign,
+        origin: flight.departure?.airport?.iata,
+        destination: flight.arrival?.airport?.iata,
+        status: flight.status,
+      });
+    });
+    
+    console.log(`📊 Found ${allFlights.length} flights, ${Object.keys(carrierStats).length} carriers`);
+    
+    res.json({
+      success: true,
+      airport: code,
+      totalFlights: allFlights.length,
+      carrierStats,
+      period: {
+        from: yesterday.toISOString(),
+        to: now.toISOString(),
+      },
+    });
+    
+  } catch (error) {
+    if (error.response?.status === 429) {
+      console.warn('⚠️  Rate limit reached for airport history');
+    } else {
+      console.error('Error fetching airport history:', error.message);
+    }
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/airport/:code/schedule
  * Returns airport departures and arrivals
  */
