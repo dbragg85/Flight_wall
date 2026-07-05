@@ -219,6 +219,42 @@
       color: var(--text-secondary);
     }
 
+    .flight-id .registration {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+
+    .delay-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: rgba(255, 68, 102, 0.2);
+      color: var(--accent-red);
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+
+    .status-badge-small {
+      font-size: 9px;
+      padding: 2px 5px;
+      background: rgba(0, 170, 255, 0.2);
+      color: var(--accent-blue);
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+
+    .route-endpoint {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .city-name {
+      font-size: 9px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
     .route-compact {
       display: flex;
       align-items: center;
@@ -350,6 +386,17 @@
       width: 10px;
       height: 3px;
       border-radius: 2px;
+    }
+
+    .refresh-info {
+      margin-left: auto;
+      display: flex;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+
+    .last-update {
+      color: var(--text-secondary);
     }
 
     /* Gantt Chart - Bottom Right */
@@ -691,6 +738,10 @@
         <div class="legend-item">
           <div class="legend-dot" style="background: #ff4466;"></div>
           <span>20K+ ft</span>
+        </div>
+        <div class="legend-item refresh-info">
+          <span>Refresh: <span id="refresh-countdown">30</span>s</span>
+          <span class="last-update">Updated: <span id="last-updated-time">--:--</span></span>
         </div>
       </div>
     </section>

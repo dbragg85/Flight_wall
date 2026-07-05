@@ -13,7 +13,7 @@ const os = require('os');
 const { fetchFlights } = require('./utils/flightApi');
 const { processFlights, loadActiveFlights, getRecentEvents } = require('./utils/flightLogic');
 const { sendNotification, sendTestNotification, sendBatchNotifications } = require('./utils/notifier');
-const { enrichFlightWithRoute, lookupFlightSchedule, lookupAirportSchedule } = require('./utils/routeLookup');
+const { enrichFlightWithRoute, lookupFlightSchedule, lookupAirportSchedule, lookupRoute } = require('./utils/routeLookup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -148,6 +148,55 @@ app.get('/', (req, res) => {
  */
 app.get('/radar', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+/**
+ * GET /api/route/:callsign
+ * Returns route info (origin, destination) for a callsign
+ */
+app.get('/api/route/:callsign', async (req, res) => {
+  try {
+    const { callsign } = req.params;
+    
+    if (!callsign) {
+      return res.status(400).json({ success: false, error: 'Callsign required' });
+    }
+    
+    console.log(`🛫 Route lookup for ${callsign}`);
+    
+    const routeInfo = await lookupRoute(callsign);
+    
+    if (!routeInfo) {
+      return res.json({
+        success: true,
+        callsign,
+        route: null,
+        message: 'No route data available',
+      });
+    }
+    
+    res.json({
+      success: true,
+      callsign,
+      route: {
+        origin: routeInfo.origin,
+        originName: routeInfo.originName,
+        destination: routeInfo.destination,
+        destinationName: routeInfo.destinationName,
+        flightNumber: routeInfo.flightNumber,
+        airlineName: routeInfo.airlineName,
+        aircraftModel: routeInfo.aircraftModel,
+        registration: routeInfo.registration,
+        status: routeInfo.status,
+        isDelayed: routeInfo.isDelayed,
+        delayMinutes: routeInfo.delayMinutes,
+      },
+    });
+    
+  } catch (error) {
+    console.error('Error fetching route:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 /**

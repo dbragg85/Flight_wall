@@ -22,6 +22,7 @@ let refreshCountdown = 30;
 let countdownInterval = null;
 let selectedFlight = null;
 let scheduleCache = {}; // Cache for schedule data to avoid repeated API calls
+let routeCache = {}; // Cache for route data
 
 // Airline logo mappings
 const AIRLINE_LOGOS = {
@@ -151,6 +152,61 @@ function matchesCarrierFilter(callsign) {
   return CONFIG.CARRIER_FILTER.includes(prefix);
 }
 
+// Fetch route info for a callsign
+async function fetchRoute(callsign) {
+  if (!callsign) return null;
+  
+  // Check cache first (cache for 10 minutes)
+  const cached = routeCache[callsign];
+  if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000) {
+    return cached.data;
+  }
+  
+  try {
+    const response = await fetch(`/api/route/${callsign}`);
+    const data = await response.json();
+    
+    if (data.success && data.route) {
+      routeCache[callsign] = {
+        data: data.route,
+        timestamp: Date.now(),
+      };
+      return data.route;
+    }
+  } catch (error) {
+    console.error(`Failed to fetch route for ${callsign}:`, error);
+  }
+  
+  // Cache null result to avoid repeated failed lookups
+  routeCache[callsign] = { data: null, timestamp: Date.now() };
+  return null;
+}
+
+// Enrich flights with route data (runs in background)
+async function enrichFlightsWithRoutes(flightList) {
+  for (const flight of flightList) {
+    if (!flight.origin || !flight.destination) {
+      const route = await fetchRoute(flight.callsign);
+      if (route) {
+        flight.origin = route.origin || flight.origin;
+        flight.destination = route.destination || flight.destination;
+        flight.originName = route.originName;
+        flight.destinationName = route.destinationName;
+        flight.airlineName = route.airlineName || flight.airlineName;
+        flight.aircraftType = route.aircraftModel || flight.aircraftType;
+        flight.registration = route.registration || flight.registration;
+        flight.flightStatus = route.status;
+        flight.isDelayed = route.isDelayed;
+        flight.delayMinutes = route.delayMinutes;
+      }
+      // Small delay between API calls to avoid rate limits
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+  // Update UI after enrichment
+  updateUI();
+}
+
 // Fetch flights from API
 async function fetchFlights() {
   try {
@@ -163,6 +219,9 @@ async function fetchFlights() {
       flights = filteredFlights.sort((a, b) => (a.distanceNm || 999) - (b.distanceNm || 999));
       updateUI();
       document.getElementById('last-updated-time').textContent = new Date().toLocaleTimeString();
+      
+      // Enrich with route data in background (won't block UI)
+      enrichFlightsWithRoutes(flights);
     }
   } catch (error) {
     console.error('Failed to fetch flights:', error);
@@ -253,6 +312,22 @@ function updateCurrentFlight() {
   const airline = getAirlineInfo(flight.callsign);
   const altColor = getAltitudeColor(flight.altitudeFt);
   
+  // Build status badge
+  let statusBadge = '';
+  if (flight.isDelayed && flight.delayMinutes > 0) {
+    statusBadge = `<span class="delay-badge">⚠️ +${flight.delayMinutes}min</span>`;
+  } else if (flight.flightStatus) {
+    statusBadge = `<span class="status-badge-small">${flight.flightStatus}</span>`;
+  }
+  
+  // Show origin/destination names if available
+  const originDisplay = flight.originName 
+    ? `<span class="code">${flight.origin || '---'}</span><span class="city-name">${flight.originName}</span>`
+    : `<span class="code">${flight.origin || '---'}</span>`;
+  const destDisplay = flight.destinationName
+    ? `<span class="code">${flight.destination || '---'}</span><span class="city-name">${flight.destinationName}</span>`
+    : `<span class="code">${flight.destination || '---'}</span>`;
+  
   container.innerHTML = `
     <div class="flight-header">
       ${airline.logo 
@@ -260,15 +335,16 @@ function updateCurrentFlight() {
         : '<span style="font-size:32px">✈️</span>'
       }
       <div class="flight-id">
-        <div class="callsign">${flight.callsign || 'N/A'}</div>
-        <div class="aircraft">${airline.name} • ${flight.aircraftType || 'Unknown'}</div>
+        <div class="callsign">${flight.callsign || 'N/A'} ${statusBadge}</div>
+        <div class="aircraft">${flight.airlineName || airline.name} • ${flight.aircraftType || 'Unknown'}</div>
+        ${flight.registration ? `<div class="registration">${flight.registration}</div>` : ''}
       </div>
     </div>
     
     <div class="route-compact">
-      <span class="code">${flight.origin || '---'}</span>
+      <div class="route-endpoint">${originDisplay}</div>
       <span class="arrow">✈️ →</span>
-      <span class="code">${flight.destination || '---'}</span>
+      <div class="route-endpoint">${destDisplay}</div>
     </div>
     
     <div class="stats-grid">
