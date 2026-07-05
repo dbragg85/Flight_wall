@@ -232,6 +232,11 @@ app.get('/api/schedule/:callsign', async (req, res) => {
     
     const schedule = await lookupFlightSchedule(callsign, registration);
     
+    console.log(`📅 Schedule result for ${callsign}: ${schedule.length} entries`);
+    if (schedule.length > 0) {
+      console.log(`   First entry: ${schedule[0].origin} → ${schedule[0].destination}`);
+    }
+    
     res.json({
       success: true,
       callsign,

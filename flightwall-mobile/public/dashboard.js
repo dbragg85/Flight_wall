@@ -711,8 +711,13 @@ async function fetchSchedule(flight) {
   const callsign = flight.callsign;
   const registration = flight.registration;
   
+  if (!callsign) {
+    console.warn('No callsign provided for schedule lookup');
+    return [];
+  }
+  
   // Check cache first (cache for 5 minutes)
-  const cacheKey = callsign || registration;
+  const cacheKey = callsign;
   const cached = scheduleCache[cacheKey];
   if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
     console.log(`Using cached schedule for ${cacheKey}`);
@@ -721,22 +726,34 @@ async function fetchSchedule(flight) {
   
   try {
     const url = registration 
-      ? `/api/schedule/${callsign}?registration=${registration}`
-      : `/api/schedule/${callsign}`;
+      ? `/api/schedule/${encodeURIComponent(callsign)}?registration=${encodeURIComponent(registration)}`
+      : `/api/schedule/${encodeURIComponent(callsign)}`;
+    
+    console.log(`Fetching schedule from: ${url}`);
     
     const response = await fetch(url);
     const data = await response.json();
     
-    if (data.success && data.schedule) {
+    console.log(`Schedule response for ${callsign}:`, data);
+    
+    if (data.success && data.schedule && data.schedule.length > 0) {
       // Cache the result
       scheduleCache[cacheKey] = {
         data: data.schedule,
         timestamp: Date.now(),
       };
+      console.log(`Cached ${data.schedule.length} schedule entries for ${callsign}`);
       return data.schedule;
+    } else {
+      console.warn(`No schedule data returned for ${callsign}:`, data);
+      // Cache empty result to avoid repeated lookups
+      scheduleCache[cacheKey] = {
+        data: [],
+        timestamp: Date.now(),
+      };
     }
   } catch (error) {
-    console.error('Failed to fetch schedule:', error);
+    console.error(`Failed to fetch schedule for ${callsign}:`, error);
   }
   
   return [];
