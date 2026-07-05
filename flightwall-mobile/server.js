@@ -186,30 +186,14 @@ async function pollFlightsInternal() {
     if (events.length > 0) {
       console.log(`\n🔔 Sending ${events.length} notification(s)...`);
       
-      // Enrich flights with route data - limit to first 5 to prevent timeouts
-      const enrichedNotifications = [];
-      const maxEnrich = Math.min(events.length, 5);
-      
-      for (let i = 0; i < events.length; i++) {
-        const e = events[i];
-        // Only enrich first 5 flights, send others without enrichment
-        const enrichedFlight = i < maxEnrich 
-          ? await enrichFlightWithRoute(e.flight)
-          : e.flight;
-        
-        enrichedNotifications.push({
-          flight: enrichedFlight,
-          event: e.event,
-          options: {
-            dashboardUrl: getDashboardUrl(),
-          },
-        });
-        
-        // Small delay between enrichments to avoid API rate limits
-        if (i < maxEnrich - 1) {
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-      }
+      // Send notifications with raw ADS-B data (no enrichment for reliability)
+      const enrichedNotifications = events.map(e => ({
+        flight: e.flight,
+        event: e.event,
+        options: {
+          dashboardUrl: getDashboardUrl(),
+        },
+      }));
       
       notificationsSent = await sendBatchNotifications(enrichedNotifications);
       
