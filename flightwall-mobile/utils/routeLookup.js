@@ -466,22 +466,54 @@ async function lookupFlightSchedule(callsign, registration = null) {
       console.log(`✅ Found ${flights.length} scheduled flights`);
       
       // Transform the data into a usable format
-      const schedule = flights.map(flight => ({
-        flightNumber: flight.number || null,
-        callsign: flight.callSign || callsign,
-        status: flight.status || 'Unknown',
-        origin: flight.departure?.airport?.iata || null,
-        originName: flight.departure?.airport?.name || null,
-        destination: flight.arrival?.airport?.iata || null,
-        destinationName: flight.arrival?.airport?.name || null,
-        departureScheduled: flight.departure?.scheduledTime?.utc || null,
-        departureActual: flight.departure?.actualTime?.utc || flight.departure?.runwayTime?.utc || null,
-        arrivalScheduled: flight.arrival?.scheduledTime?.utc || null,
-        arrivalActual: flight.arrival?.actualTime?.utc || flight.arrival?.runwayTime?.utc || null,
-        aircraftReg: flight.aircraft?.reg || registration,
-        aircraftModel: flight.aircraft?.model || null,
-        airline: flight.airline?.name || null,
-      }));
+      const schedule = flights.map(flight => {
+        const depScheduled = flight.departure?.scheduledTime?.utc;
+        const depActual = flight.departure?.actualTime?.utc || flight.departure?.runwayTime?.utc;
+        const arrScheduled = flight.arrival?.scheduledTime?.utc;
+        const arrActual = flight.arrival?.actualTime?.utc || flight.arrival?.runwayTime?.utc;
+        const arrRevised = flight.arrival?.revisedTime?.utc;
+        
+        // Calculate delay in minutes
+        let delayMinutes = 0;
+        if (depScheduled && depActual) {
+          delayMinutes = Math.round((new Date(depActual) - new Date(depScheduled)) / 60000);
+        }
+        
+        // Check for potential diversion (revised arrival significantly different)
+        let isDiverted = false;
+        if (arrScheduled && arrRevised) {
+          const arrDiff = Math.abs(new Date(arrRevised) - new Date(arrScheduled)) / 60000;
+          if (arrDiff > 120) { // More than 2 hours difference might indicate diversion
+            isDiverted = true;
+          }
+        }
+        
+        return {
+          flightNumber: flight.number || null,
+          callsign: flight.callSign || callsign,
+          status: flight.status || 'Unknown',
+          origin: flight.departure?.airport?.iata || null,
+          originName: flight.departure?.airport?.name || null,
+          originLat: flight.departure?.airport?.location?.lat || null,
+          originLon: flight.departure?.airport?.location?.lon || null,
+          destination: flight.arrival?.airport?.iata || null,
+          destinationName: flight.arrival?.airport?.name || null,
+          destLat: flight.arrival?.airport?.location?.lat || null,
+          destLon: flight.arrival?.airport?.location?.lon || null,
+          departureScheduled: depScheduled,
+          departureActual: depActual,
+          arrivalScheduled: arrScheduled,
+          arrivalActual: arrActual,
+          arrivalRevised: arrRevised,
+          aircraftReg: flight.aircraft?.reg || registration,
+          aircraftModel: flight.aircraft?.model || null,
+          airline: flight.airline?.name || null,
+          delayMinutes: delayMinutes,
+          isDelayed: delayMinutes > 15,
+          isDiverted: isDiverted,
+          isCargo: flight.isCargo || false,
+        };
+      });
       
       // Sort by departure time
       schedule.sort((a, b) => {

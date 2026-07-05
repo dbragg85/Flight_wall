@@ -84,6 +84,8 @@ let selectedFlight = null;
 let selectedSchedule = []; // Preserve schedule across refreshes
 let scheduleCache = {}; // Cache for schedule data to avoid repeated API calls
 let routeCache = {}; // Cache for route data
+let flightPathLine = null; // Route line for selected flight
+let positionHistory = {}; // Store position history for trails
 
 // Airline logo mappings
 const AIRLINE_LOGOS = {
@@ -717,8 +719,128 @@ async function selectFlight(callsign) {
     // Store schedule for persistence across refreshes
     selectedSchedule = schedule;
     
+    // Draw flight route on map
+    drawFlightRoute(selectedFlight, schedule);
+    
     updateGanttChart(selectedFlight, schedule);
   }
+}
+
+// Draw flight route line on map
+function drawFlightRoute(flight, schedule) {
+  // Remove existing route line and markers
+  if (flightPathLine) {
+    if (Array.isArray(flightPathLine)) {
+      flightPathLine.forEach(layer => map.removeLayer(layer));
+    } else {
+      map.removeLayer(flightPathLine);
+    }
+    flightPathLine = null;
+  }
+  
+  if (!flight || !flight.latitude || !flight.longitude) return;
+  
+  // Find current leg from schedule
+  const currentLeg = schedule.find(s => 
+    s.status === 'EnRoute' || s.status === 'Departed'
+  ) || schedule[schedule.length - 1];
+  
+  if (!currentLeg) return;
+  
+  // Get airport coordinates - prefer from schedule data, fallback to gateway lookup
+  const originCoords = (currentLeg.originLat && currentLeg.originLon) 
+    ? [currentLeg.originLat, currentLeg.originLon]
+    : getAirportCoords(currentLeg.origin);
+  const destCoords = (currentLeg.destLat && currentLeg.destLon)
+    ? [currentLeg.destLat, currentLeg.destLon]
+    : getAirportCoords(currentLeg.destination);
+  const currentPos = [flight.latitude, flight.longitude];
+  
+  const layers = [];
+  
+  // Draw completed portion (origin to current position) - solid line
+  if (originCoords) {
+    const completedLine = L.polyline([originCoords, currentPos], {
+      color: '#00ff88',
+      weight: 3,
+      opacity: 0.8,
+    }).addTo(map);
+    layers.push(completedLine);
+    
+    // Origin marker
+    const originMarker = L.circleMarker(originCoords, {
+      radius: 8,
+      color: '#00aaff',
+      fillColor: '#00aaff',
+      fillOpacity: 0.9,
+      weight: 2,
+    }).addTo(map).bindPopup(`<b>${currentLeg.origin}</b><br>${currentLeg.originName || 'Origin'}`);
+    layers.push(originMarker);
+  }
+  
+  // Draw remaining portion (current position to destination) - dashed line
+  if (destCoords) {
+    const remainingLine = L.polyline([currentPos, destCoords], {
+      color: '#ffaa00',
+      weight: 2,
+      opacity: 0.6,
+      dashArray: '8, 8',
+    }).addTo(map);
+    layers.push(remainingLine);
+    
+    // Destination marker
+    const destMarker = L.circleMarker(destCoords, {
+      radius: 8,
+      color: '#ff9900',
+      fillColor: '#ff9900',
+      fillOpacity: 0.9,
+      weight: 2,
+    }).addTo(map).bindPopup(`<b>${currentLeg.destination}</b><br>${currentLeg.destinationName || 'Destination'}`);
+    layers.push(destMarker);
+  }
+  
+  // Show delay/diversion indicator
+  if (currentLeg.isDelayed || currentLeg.isDiverted) {
+    const statusText = currentLeg.isDiverted ? '⚠️ POSSIBLE DIVERSION' : `⚠️ DELAYED +${currentLeg.delayMinutes}min`;
+    const statusMarker = L.marker(currentPos, {
+      icon: L.divIcon({
+        className: 'flight-status-indicator',
+        html: `<div class="status-label ${currentLeg.isDiverted ? 'diverted' : 'delayed'}">${statusText}</div>`,
+        iconSize: [150, 20],
+        iconAnchor: [75, -15],
+      })
+    }).addTo(map);
+    layers.push(statusMarker);
+  }
+  
+  flightPathLine = layers;
+}
+
+// Get airport coordinates from gateway data or schedule
+function getAirportCoords(iata) {
+  if (!iata) return null;
+  
+  const icao = 'K' + iata; // US airports
+  
+  // Check our gateway data first
+  for (const region of Object.values(GATEWAYS)) {
+    if (region[icao]) {
+      return [region[icao].lat, region[icao].lon];
+    }
+  }
+  
+  // Check for non-K prefix airports (Hawaii, Puerto Rico, etc.)
+  const prefixes = ['PH', 'PA', 'TJ', ''];
+  for (const prefix of prefixes) {
+    const code = prefix + iata;
+    for (const region of Object.values(GATEWAYS)) {
+      if (region[code]) {
+        return [region[code].lat, region[code].lon];
+      }
+    }
+  }
+  
+  return null;
 }
 
 // Fetch schedule data from API
@@ -838,9 +960,14 @@ function updateGanttChart(flight, schedule = []) {
         const depTime = s.departureActual || s.departureScheduled;
         const arrTime = s.arrivalActual || s.arrivalScheduled;
         const statusClass = getStatusClass(s.status);
+        const delayIndicator = s.isDiverted 
+          ? '<span class="delay-indicator diverted">DIVERTED?</span>'
+          : s.isDelayed 
+            ? `<span class="delay-indicator delayed">+${s.delayMinutes}min</span>`
+            : '';
         return `
           <div class="schedule-item ${statusClass}">
-            <span class="schedule-route">${s.origin || '---'} → ${s.destination || '---'}</span>
+            <span class="schedule-route">${s.origin || '---'} → ${s.destination || '---'}${delayIndicator}</span>
             <span class="schedule-times">
               ${formatZuluTime(depTime)} - ${formatZuluTime(arrTime)}
             </span>

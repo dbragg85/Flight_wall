@@ -748,6 +748,56 @@
       text-align: center;
     }
 
+    /* Flight status indicators on map */
+    .flight-status-indicator {
+      background: transparent;
+    }
+
+    .status-label {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .status-label.delayed {
+      background: rgba(255, 153, 0, 0.9);
+      color: white;
+      box-shadow: 0 0 10px rgba(255, 153, 0, 0.5);
+    }
+
+    .status-label.diverted {
+      background: rgba(255, 68, 102, 0.9);
+      color: white;
+      box-shadow: 0 0 10px rgba(255, 68, 102, 0.5);
+      animation: pulse-alert 1s infinite;
+    }
+
+    @keyframes pulse-alert {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    /* Schedule item delay/diversion indicators */
+    .schedule-item .delay-indicator {
+      font-size: 9px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      margin-left: 6px;
+    }
+
+    .delay-indicator.delayed {
+      background: rgba(255, 153, 0, 0.2);
+      color: var(--accent-orange);
+    }
+
+    .delay-indicator.diverted {
+      background: rgba(255, 68, 102, 0.2);
+      color: var(--accent-red);
+    }
+
     /* No flight state */
     .no-flight {
       display: flex;
