@@ -86,6 +86,9 @@ let scheduleCache = {}; // Cache for schedule data to avoid repeated API calls
 let routeCache = {}; // Cache for route data
 let flightPathLine = null; // Route line for selected flight
 let positionHistory = {}; // Store position history for trails
+let radarLayer = null; // Weather radar overlay
+let radarTimestamp = null; // Current radar frame timestamp
+let tafCache = {}; // Cache for TAF data
 
 // Airline logo mappings
 const AIRLINE_LOGOS = {
@@ -119,8 +122,130 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(updateDateTime, 1000);
   fetchFlights();
   fetchWeather();
+  fetchRadar();
   startCountdown();
+  
+  // Refresh radar every 5 minutes
+  setInterval(fetchRadar, 5 * 60 * 1000);
 });
+
+// Fetch and display weather radar
+async function fetchRadar() {
+  try {
+    const response = await fetch('/api/radar');
+    const data = await response.json();
+    
+    if (data.success && data.radar.past.length > 0) {
+      // Use most recent radar frame
+      const latestFrame = data.radar.past[data.radar.past.length - 1];
+      const radarUrl = `${data.host}${latestFrame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+      
+      // Remove old radar layer
+      if (radarLayer) {
+        map.removeLayer(radarLayer);
+      }
+      
+      // Add new radar layer
+      radarLayer = L.tileLayer(radarUrl, {
+        opacity: 0.5,
+        zIndex: 100,
+      }).addTo(map);
+      
+      // Update timestamp
+      radarTimestamp = new Date(latestFrame.time * 1000);
+      updateRadarTimestamp();
+    }
+  } catch (error) {
+    console.error('Failed to fetch radar:', error);
+  }
+}
+
+// Update radar timestamp display
+function updateRadarTimestamp() {
+  const el = document.getElementById('radar-timestamp');
+  if (el && radarTimestamp) {
+    const hours = radarTimestamp.getUTCHours().toString().padStart(2, '0');
+    const minutes = radarTimestamp.getUTCMinutes().toString().padStart(2, '0');
+    el.textContent = `Radar: ${hours}:${minutes}Z`;
+  }
+}
+
+// Fetch TAF for selected gateway
+async function fetchTAF(icao) {
+  // Check cache first (cache for 30 minutes)
+  const cached = tafCache[icao];
+  if (cached && Date.now() - cached.timestamp < 30 * 60 * 1000) {
+    return cached.data;
+  }
+  
+  try {
+    const response = await fetch(`/api/taf/${icao}`);
+    const data = await response.json();
+    
+    if (data.success) {
+      tafCache[icao] = {
+        data: data,
+        timestamp: Date.now(),
+      };
+      return data;
+    }
+  } catch (error) {
+    console.error(`Failed to fetch TAF for ${icao}:`, error);
+  }
+  
+  return null;
+}
+
+// Display TAF in gateway panel
+async function displayTAF(icao) {
+  const tafContainer = document.getElementById('taf-display');
+  if (!tafContainer) return;
+  
+  tafContainer.innerHTML = '<div class="taf-loading">Loading TAF...</div>';
+  
+  const taf = await fetchTAF(icao);
+  
+  if (taf && taf.rawTAF) {
+    // Parse key info from TAF
+    const forecasts = taf.forecasts || [];
+    const currentFcst = forecasts[0];
+    
+    let wxSummary = 'VFR';
+    let wxClass = 'vfr';
+    
+    if (currentFcst) {
+      const visib = currentFcst.visib;
+      const ceiling = currentFcst.clouds?.[0]?.base;
+      
+      // Determine flight category
+      if (visib < 1 || ceiling < 500) {
+        wxSummary = 'LIFR';
+        wxClass = 'lifr';
+      } else if (visib < 3 || ceiling < 1000) {
+        wxSummary = 'IFR';
+        wxClass = 'ifr';
+      } else if (visib < 5 || ceiling < 3000) {
+        wxSummary = 'MVFR';
+        wxClass = 'mvfr';
+      }
+      
+      // Add weather if present
+      if (currentFcst.wxString) {
+        wxSummary += ` • ${currentFcst.wxString}`;
+      }
+    }
+    
+    tafContainer.innerHTML = `
+      <div class="taf-header">
+        <span class="taf-icao">${icao}</span>
+        <span class="taf-category ${wxClass}">${wxSummary}</span>
+      </div>
+      <div class="taf-raw">${taf.rawTAF}</div>
+    `;
+  } else {
+    tafContainer.innerHTML = `<div class="taf-unavailable">TAF unavailable for ${icao}</div>`;
+  }
+}
 
 // Initialize gateway selector panel
 function initGatewaySelector() {
@@ -161,6 +286,9 @@ function initGatewaySelector() {
   // Expand Hubs by default and select KCVG
   toggleCategory('Hubs');
   highlightSelectedGateway('KCVG');
+  
+  // Load TAF for default gateway
+  displayTAF('KCVG');
 }
 
 // Toggle category dropdown
@@ -180,6 +308,8 @@ function selectGateway(icao) {
   highlightSelectedGateway(icao);
   // Refresh flights for new location
   fetchFlights();
+  // Fetch TAF for this gateway
+  displayTAF(icao);
 }
 
 // Select entire region

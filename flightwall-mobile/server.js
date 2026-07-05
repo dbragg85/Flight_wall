@@ -256,6 +256,83 @@ app.get('/api/schedule/:callsign', async (req, res) => {
 });
 
 /**
+ * GET /api/taf/:icao
+ * Returns TAF (Terminal Aerodrome Forecast) for an airport
+ */
+app.get('/api/taf/:icao', async (req, res) => {
+  try {
+    const { icao } = req.params;
+    
+    if (!icao) {
+      return res.status(400).json({ success: false, error: 'ICAO code required' });
+    }
+    
+    console.log(`🌤️  TAF request for ${icao}`);
+    
+    const axios = require('axios');
+    const response = await axios.get(
+      `https://aviationweather.gov/api/data/taf?ids=${icao}&format=json`,
+      { timeout: 10000 }
+    );
+    
+    if (response.data && response.data.length > 0) {
+      const taf = response.data[0];
+      res.json({
+        success: true,
+        icao: taf.icaoId,
+        rawTAF: taf.rawTAF,
+        issueTime: taf.issueTime,
+        validFrom: taf.validTimeFrom,
+        validTo: taf.validTimeTo,
+        forecasts: taf.fcsts,
+        name: taf.name,
+      });
+    } else {
+      res.json({
+        success: true,
+        icao,
+        rawTAF: null,
+        message: 'No TAF available',
+      });
+    }
+    
+  } catch (error) {
+    console.error('Error fetching TAF:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/radar
+ * Returns weather radar tile URLs from RainViewer
+ */
+app.get('/api/radar', async (req, res) => {
+  try {
+    const axios = require('axios');
+    const response = await axios.get(
+      'https://api.rainviewer.com/public/weather-maps.json',
+      { timeout: 10000 }
+    );
+    
+    const data = response.data;
+    
+    res.json({
+      success: true,
+      host: data.host,
+      radar: {
+        past: data.radar.past.slice(-6), // Last 6 frames (30 min)
+        nowcast: data.radar.nowcast || [],
+      },
+      generated: data.generated,
+    });
+    
+  } catch (error) {
+    console.error('Error fetching radar:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/airport/:code/schedule
  * Returns airport departures and arrivals
  */

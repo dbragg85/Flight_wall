@@ -368,6 +368,68 @@
       grid-column: 3;
     }
 
+    /* TAF Display */
+    .taf-container {
+      padding: 8px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 10px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    .taf-placeholder, .taf-unavailable, .taf-loading {
+      color: var(--text-muted);
+      text-align: center;
+      padding: 8px;
+    }
+
+    .taf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .taf-icao {
+      font-weight: 700;
+      color: var(--accent-blue);
+    }
+
+    .taf-category {
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+      font-size: 9px;
+    }
+
+    .taf-category.vfr {
+      background: rgba(0, 255, 136, 0.2);
+      color: var(--accent-green);
+    }
+
+    .taf-category.mvfr {
+      background: rgba(0, 170, 255, 0.2);
+      color: var(--accent-blue);
+    }
+
+    .taf-category.ifr {
+      background: rgba(255, 68, 102, 0.2);
+      color: var(--accent-red);
+    }
+
+    .taf-category.lifr {
+      background: rgba(170, 102, 255, 0.2);
+      color: var(--accent-purple);
+    }
+
+    .taf-raw {
+      font-family: monospace;
+      font-size: 9px;
+      color: var(--text-secondary);
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
     .gateway-categories {
       flex: 1;
       overflow-y: auto;
@@ -902,8 +964,8 @@
           <span>20K+ ft</span>
         </div>
         <div class="legend-item refresh-info">
+          <span id="radar-timestamp">Radar: --:--Z</span>
           <span>Refresh: <span id="refresh-countdown">30</span>s</span>
-          <span class="last-update">Updated: <span id="last-updated-time">--:--</span></span>
         </div>
       </div>
     </section>
@@ -927,6 +989,9 @@
       <div class="card-header">
         Gateways
         <span class="badge" id="gateway-count">47</span>
+      </div>
+      <div class="taf-container" id="taf-display">
+        <div class="taf-placeholder">Select a gateway to view TAF</div>
       </div>
       <div class="gateway-categories" id="gateway-categories">
         <!-- Categories populated by JS -->
