@@ -105,12 +105,6 @@ function formatMessage(flight, event) {
     lines.push(`✅ ${Math.abs(flight.delayMinutes)} min early`);
   }
   
-  // Destination weather
-  if (flight.destWeather) {
-    const w = flight.destWeather;
-    lines.push(`🌤️ ${flight.destination}: ${w.tempF}°F ${w.condition}`);
-  }
-  
   return lines.join('\n');
 }
 

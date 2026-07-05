@@ -186,13 +186,14 @@ async function enrichFlightWithRoute(flight) {
     }
   }
   
-  // Get destination weather
-  if (enrichedFlight.destination) {
-    const weather = await getAirportWeather(enrichedFlight.destination);
-    if (weather) {
-      enrichedFlight.destWeather = weather;
-    }
-  }
+  // Weather lookup disabled for faster processing
+  // To re-enable: uncomment below
+  // if (enrichedFlight.destination) {
+  //   const weather = await getAirportWeather(enrichedFlight.destination);
+  //   if (weather) {
+  //     enrichedFlight.destWeather = weather;
+  //   }
+  // }
   
   return enrichedFlight;
 }
