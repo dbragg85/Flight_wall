@@ -25,7 +25,7 @@ const PRIORITY_MAP = {
 /**
  * Format flight notification message
  * @param {Object} flight - Normalized flight object
- * @param {Object} event - Event details
+ * @param {Object} event - Event details (may contain multiple reasons)
  * @returns {string} Formatted message
  */
 function formatMessage(flight, event) {
@@ -35,15 +35,16 @@ function formatMessage(flight, event) {
   // Flight identifier
   lines.push(`${emoji} ${flight.callsign || 'Unknown'}`);
   
-  // Route
+  // Route (if available)
   if (flight.origin || flight.destination) {
     const route = [flight.origin || '???', flight.destination || '???'].join(' → ');
     lines.push(route);
   }
   
-  // Aircraft type
-  if (flight.aircraftType) {
-    lines.push(flight.aircraftType);
+  // Aircraft type and registration
+  const aircraftInfo = [flight.aircraftType, flight.registration].filter(Boolean).join(' • ');
+  if (aircraftInfo) {
+    lines.push(aircraftInfo);
   }
   
   // Position info
@@ -63,8 +64,11 @@ function formatMessage(flight, event) {
     lines.push(`Arriving in ~${flight.estimatedMinutesAway} min`);
   }
   
-  // Event reason
-  if (event && event.reason) {
+  // Event reasons (consolidated)
+  if (event && event.reasons && event.reasons.length > 0) {
+    lines.push('');
+    lines.push(`📍 ${event.reasons.join(' • ')}`);
+  } else if (event && event.reason) {
     lines.push('');
     lines.push(`📍 ${event.reason}`);
   }

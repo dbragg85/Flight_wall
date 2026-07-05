@@ -263,6 +263,7 @@ function detectFlightEvents(flight, previousFlight, seenFlights) {
 
 /**
  * Process all flights and detect events
+ * Consolidates multiple events per flight into a single notification
  * @param {Array} currentFlights - Array of current flight objects
  * @returns {Object} { events: Array, activeFlights: Array }
  */
@@ -279,8 +280,8 @@ function processFlights(currentFlights) {
     });
   }
   
-  // Detect events for each flight
-  const allEvents = [];
+  // Detect events for each flight and consolidate
+  const consolidatedEvents = [];
   
   currentFlights.forEach(flight => {
     const flightId = flight.id || flight.callsign;
@@ -288,15 +289,38 @@ function processFlights(currentFlights) {
     
     const flightEvents = detectFlightEvents(flight, previousFlight, seenFlights);
     
-    // Add flight data to each event and mark as notified
+    // Skip if no events for this flight
+    if (flightEvents.length === 0) return;
+    
+    // Consolidate multiple events into ONE notification per flight
+    const eventTypes = flightEvents.map(e => e.type);
+    const reasons = flightEvents.map(e => e.reason);
+    
+    // Determine the highest priority among all events
+    const priorityOrder = { 'urgent': 3, 'important': 2, 'normal': 1 };
+    const highestPriority = flightEvents.reduce((highest, e) => {
+      return priorityOrder[e.priority] > priorityOrder[highest] ? e.priority : highest;
+    }, 'normal');
+    
+    // Create a single consolidated event
+    const consolidatedEvent = {
+      type: eventTypes.includes(EVENT_TYPES.AMAZON) ? 'amazon' : 
+            eventTypes.includes(EVENT_TYPES.NEW_FLIGHT) ? 'new_flight' : 
+            eventTypes[0],
+      reasons: reasons,
+      reason: reasons.join(' • '),
+      priority: highestPriority,
+      eventCount: flightEvents.length,
+    };
+    
+    consolidatedEvents.push({
+      flight,
+      event: consolidatedEvent,
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Mark ALL event types as notified for this flight
     flightEvents.forEach(event => {
-      allEvents.push({
-        flight,
-        event,
-        timestamp: new Date().toISOString(),
-      });
-      
-      // Mark this event as notified
       markAsNotified(seenFlights, flightId, event.type, flight);
     });
   });
@@ -310,10 +334,10 @@ function processFlights(currentFlights) {
   // Clean up old entries (older than 24 hours)
   cleanupOldEntries(seenFlights);
   
-  console.log(`🔍 Processed ${currentFlights.length} flights, detected ${allEvents.length} events`);
+  console.log(`🔍 Processed ${currentFlights.length} flights, detected ${consolidatedEvents.length} notification(s)`);
   
   return {
-    events: allEvents,
+    events: consolidatedEvents,
     activeFlights: currentFlights,
   };
 }
