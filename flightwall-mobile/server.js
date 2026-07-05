@@ -171,19 +171,22 @@ async function pollFlights() {
     if (events.length > 0) {
       console.log(`\n🔔 Sending ${events.length} notification(s)...`);
       
-      // Enrich flights with route data before sending notifications
-      const enrichedNotifications = await Promise.all(
-        events.map(async (e) => {
-          const enrichedFlight = await enrichFlightWithRoute(e.flight);
-          return {
-            flight: enrichedFlight,
-            event: e.event,
-            options: {
-              dashboardUrl: getDashboardUrl(),
-            },
-          };
-        })
-      );
+      // Enrich flights with route data SEQUENTIALLY to avoid rate limits
+      const enrichedNotifications = [];
+      for (const e of events) {
+        const enrichedFlight = await enrichFlightWithRoute(e.flight);
+        enrichedNotifications.push({
+          flight: enrichedFlight,
+          event: e.event,
+          options: {
+            dashboardUrl: getDashboardUrl(),
+          },
+        });
+        // Small delay between enrichments to avoid API rate limits
+        if (events.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
       
       notificationsSent = await sendBatchNotifications(enrichedNotifications);
       
