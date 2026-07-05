@@ -55,8 +55,8 @@ async function lookupRoute(callsign) {
       return null;
     }
     
-    // Find the most relevant flight (in progress or most recent)
-    const flight = findRelevantFlight(flights);
+    // Find the most relevant flight (exact callsign match preferred)
+    const flight = findRelevantFlight(flights, cleanCallsign);
     
     if (!flight) {
       routeCache.set(cleanCallsign, { data: null, timestamp: Date.now() });
@@ -109,9 +109,13 @@ async function lookupRoute(callsign) {
 
 /**
  * Find the most relevant flight from API results
- * Prefers in-progress flights, then most recent
+ * Prefers exact callsign match, then in-progress flights, then most recent
  */
-function findRelevantFlight(flights) {
+function findRelevantFlight(flights, targetCallsign) {
+  if (!flights || flights.length === 0) return null;
+  
+  const cleanTarget = targetCallsign?.trim().toUpperCase();
+  
   // Priority: EnRoute > Departed > Expected > Arrived
   const statusPriority = {
     'EnRoute': 4,
@@ -121,10 +125,29 @@ function findRelevantFlight(flights) {
     'Unknown': 0,
   };
   
-  return flights.reduce((best, current) => {
+  // First, filter to exact callsign matches if possible
+  const exactMatches = flights.filter(f => {
+    const flightCallsign = (f.callSign || '').trim().toUpperCase();
+    return flightCallsign === cleanTarget;
+  });
+  
+  // Use exact matches if available, otherwise use all flights
+  const candidates = exactMatches.length > 0 ? exactMatches : flights;
+  
+  // Sort by status priority, then by most recent update
+  return candidates.reduce((best, current) => {
     const currentPriority = statusPriority[current.status] || 0;
     const bestPriority = statusPriority[best?.status] || -1;
-    return currentPriority > bestPriority ? current : best;
+    
+    // Prefer higher status priority
+    if (currentPriority !== bestPriority) {
+      return currentPriority > bestPriority ? current : best;
+    }
+    
+    // If same priority, prefer more recent
+    const currentTime = new Date(current.lastUpdatedUtc || 0).getTime();
+    const bestTime = new Date(best?.lastUpdatedUtc || 0).getTime();
+    return currentTime > bestTime ? current : best;
   }, null);
 }
 
