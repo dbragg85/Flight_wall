@@ -109,21 +109,22 @@ function initMap() {
   }).addTo(map);
 }
 
-// Update date/time display
+// Update date/time display (Zulu/UTC time)
 function updateDateTime() {
   const now = new Date();
-  document.getElementById('current-time').textContent = now.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
-  });
-  document.getElementById('current-date').textContent = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  
+  // 24-hour Zulu time format
+  const hours = now.getUTCHours().toString().padStart(2, '0');
+  const minutes = now.getUTCMinutes().toString().padStart(2, '0');
+  const seconds = now.getUTCSeconds().toString().padStart(2, '0');
+  document.getElementById('current-time').textContent = `${hours}:${minutes}:${seconds}Z`;
+  
+  // Zulu date format
+  const day = now.getUTCDate().toString().padStart(2, '0');
+  const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  const month = months[now.getUTCMonth()];
+  const year = now.getUTCFullYear();
+  document.getElementById('current-date').textContent = `${day} ${month} ${year} UTC`;
 }
 
 // Countdown timer
@@ -340,19 +341,18 @@ function updateGanttChart(flight) {
   
   // Generate mock 24-hour schedule (in real app, this would come from AeroDataBox)
   const now = new Date();
-  const currentHour = now.getHours();
+  const currentHour = now.getUTCHours();
   
-  // Create hour headers
+  // Create hour headers in Zulu time (24-hour format)
   let hoursHtml = '';
   for (let i = 0; i < 24; i++) {
-    const hour = (i) % 24;
-    const label = hour === 0 ? '12a' : hour < 12 ? `${hour}a` : hour === 12 ? '12p' : `${hour-12}p`;
-    const isCurrent = hour === currentHour;
+    const label = i.toString().padStart(2, '0') + 'Z';
+    const isCurrent = i === currentHour;
     hoursHtml += `<div class="gantt-hour ${isCurrent ? 'current' : ''}">${label}</div>`;
   }
   
-  // Calculate now line position
-  const nowPercent = ((currentHour + now.getMinutes() / 60) / 24) * 100;
+  // Calculate now line position (UTC)
+  const nowPercent = ((currentHour + now.getUTCMinutes() / 60) / 24) * 100;
   
   // Generate sample flight legs for the day
   const sampleLegs = generateSampleSchedule(flight, prefix);
