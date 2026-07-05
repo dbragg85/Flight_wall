@@ -428,17 +428,17 @@ async function lookupFlightSchedule(callsign, registration = null) {
   const dateFrom = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
   const dateTo = tomorrow.toISOString().split('T')[0];
   
-  // Try callsign first, then registration if available
+  // Try registration FIRST (shows full aircraft schedule), then callsign as fallback
   const searchMethods = [];
-  
-  if (callsign) {
-    const cleanCallsign = callsign.trim().toUpperCase();
-    searchMethods.push({ type: 'CallSign', param: cleanCallsign });
-  }
   
   if (registration) {
     const cleanReg = registration.trim().toUpperCase().replace(/-/g, '');
     searchMethods.push({ type: 'Reg', param: cleanReg });
+  }
+  
+  if (callsign) {
+    const cleanCallsign = callsign.trim().toUpperCase();
+    searchMethods.push({ type: 'CallSign', param: cleanCallsign });
   }
   
   for (const method of searchMethods) {
