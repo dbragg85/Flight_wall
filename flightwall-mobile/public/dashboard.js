@@ -81,6 +81,7 @@ let flights = [];
 let refreshCountdown = 30;
 let countdownInterval = null;
 let selectedFlight = null;
+let selectedSchedule = []; // Preserve schedule across refreshes
 let scheduleCache = {}; // Cache for schedule data to avoid repeated API calls
 let routeCache = {}; // Cache for route data
 
@@ -551,8 +552,18 @@ function updateUI() {
   updateCurrentFlight();
   updateFlightsList();
   updateMapMarkers();
+  
+  // Preserve selected flight and schedule across refreshes
   if (selectedFlight) {
-    updateGanttChart(selectedFlight);
+    // Re-find the flight in the updated list to get fresh position data
+    const updatedFlight = flights.find(f => f.callsign === selectedFlight.callsign);
+    if (updatedFlight) {
+      selectedFlight = updatedFlight;
+    }
+    // Re-render Gantt with preserved schedule
+    if (selectedSchedule.length > 0) {
+      updateGanttChart(selectedFlight, selectedSchedule);
+    }
   }
 }
 
@@ -702,6 +713,10 @@ async function selectFlight(callsign) {
     
     // Fetch real schedule data
     const schedule = await fetchSchedule(selectedFlight);
+    
+    // Store schedule for persistence across refreshes
+    selectedSchedule = schedule;
+    
     updateGanttChart(selectedFlight, schedule);
   }
 }
@@ -844,12 +859,20 @@ function convertScheduleToLegs(schedule, windowStart, windowDurationMs) {
   
   schedule.forEach(flight => {
     const depTime = flight.departureActual || flight.departureScheduled;
-    const arrTime = flight.arrivalActual || flight.arrivalScheduled;
+    let arrTime = flight.arrivalActual || flight.arrivalScheduled;
     
-    if (!depTime || !arrTime) return;
+    if (!depTime) return;
     
     const depDate = new Date(depTime);
-    const arrDate = new Date(arrTime);
+    
+    // If no arrival time, estimate 2 hours (common flight duration)
+    let arrDate;
+    if (!arrTime) {
+      arrDate = new Date(depDate.getTime() + 2 * 60 * 60 * 1000);
+      arrTime = arrDate.toISOString();
+    } else {
+      arrDate = new Date(arrTime);
+    }
     
     // Calculate position within the 48-hour window
     const startOffset = depDate.getTime() - windowStart.getTime();
@@ -863,7 +886,8 @@ function convertScheduleToLegs(schedule, windowStart, windowDurationMs) {
     const clampedEnd = Math.min(windowDurationMs, endOffset);
     
     const startPercent = (clampedStart / windowDurationMs) * 100;
-    const widthPercent = Math.max(1, ((clampedEnd - clampedStart) / windowDurationMs) * 100);
+    // Minimum 2% width so bars are always visible
+    const widthPercent = Math.max(2, ((clampedEnd - clampedStart) / windowDurationMs) * 100);
     
     const route = `${flight.origin || '---'}→${flight.destination || '---'}`;
     const tooltip = `${route}\nDep: ${formatZuluTime(depTime)}\nArr: ${formatZuluTime(arrTime)}\nStatus: ${flight.status || 'Scheduled'}`;
