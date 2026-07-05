@@ -918,10 +918,11 @@ function updateMapMarkers() {
     const color = getAltitudeColor(flight.altitudeFt);
     const rotation = flight.heading || 0;
     const airline = getAirlineInfo(flight.callsign);
+    const callsign = flight.callsign;
     
     const icon = L.divIcon({
       className: 'flight-marker',
-      html: `<div class="flight-marker-inner" style="transform: rotate(${rotation}deg); color: ${color};">✈️</div>`,
+      html: `<div class="flight-marker-inner" style="transform: rotate(${rotation}deg); color: ${color}; cursor: pointer;">✈️</div>`,
       iconSize: [24, 24],
       iconAnchor: [12, 12],
     });
@@ -929,14 +930,22 @@ function updateMapMarkers() {
     const marker = L.marker([flight.latitude, flight.longitude], { icon })
       .addTo(map)
       .bindPopup(`
-        <b>${flight.callsign || 'Unknown'}</b><br>
+        <b>${callsign || 'Unknown'}</b><br>
         ${airline.name}<br>
         ${flight.aircraftType || 'Unknown aircraft'}<br>
         Alt: ${flight.altitudeFt?.toLocaleString() || '--'} ft<br>
         Speed: ${flight.groundSpeedKt || '--'} kts<br>
-        Distance: ${flight.distanceNm?.toFixed(1) || '--'} NM
+        Distance: ${flight.distanceNm?.toFixed(1) || '--'} NM<br>
+        <a href="#" onclick="selectFlight('${callsign}'); return false;" style="color: #00ff88;">View Schedule</a>
       `);
     
-    markers[flight.id || flight.callsign] = marker;
+    // Click on marker to select flight and show schedule
+    marker.on('click', () => {
+      if (callsign) {
+        selectFlight(callsign);
+      }
+    });
+    
+    markers[flight.id || callsign] = marker;
   });
 }
