@@ -32,9 +32,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 /**
  * GET /api/flights
  * Returns current active flights
+ * Supports optional lat/lon query params to search from a different location
  */
-app.get('/api/flights', (req, res) => {
+app.get('/api/flights', async (req, res) => {
   try {
+    const { lat, lon } = req.query;
+    
+    // If lat/lon provided, fetch flights from that location
+    if (lat && lon) {
+      const flights = await fetchFlights(parseFloat(lat), parseFloat(lon));
+      return res.json({
+        success: true,
+        flights: flights || [],
+        lastUpdated: new Date().toISOString(),
+        count: (flights || []).length,
+        location: { lat: parseFloat(lat), lon: parseFloat(lon) },
+      });
+    }
+    
+    // Otherwise return cached active flights from polling
     const data = loadActiveFlights();
     res.json({
       success: true,

@@ -175,12 +175,16 @@ function toggleCategory(region) {
 function selectGateway(icao) {
   showGateway(icao);
   highlightSelectedGateway(icao);
+  // Refresh flights for new location
+  fetchFlights();
 }
 
 // Select entire region
 function selectRegion(region) {
   showRegion(region);
   highlightSelectedRegion(region);
+  // Refresh flights for new region (uses first gateway)
+  fetchFlights();
 }
 
 // Update UI to show selected gateway
@@ -456,10 +460,41 @@ async function enrichFlightsWithRoutes(flightList) {
   updateUI();
 }
 
-// Fetch flights from API
+// Get current search location based on selected gateway/region
+function getSearchLocation() {
+  // If a single gateway is selected, use its coordinates
+  if (selectedGateway) {
+    const gateway = findGateway(selectedGateway);
+    if (gateway) {
+      return { lat: gateway.lat, lon: gateway.lon };
+    }
+  }
+  
+  // If a region is selected, use the first gateway's coordinates (or center)
+  if (selectedRegion && GATEWAYS[selectedRegion]) {
+    const gateways = Object.values(GATEWAYS[selectedRegion]);
+    if (gateways.length > 0) {
+      // Use KCVG for Hubs, otherwise first gateway in region
+      if (selectedRegion === 'Hubs' && GATEWAYS.Hubs.KCVG) {
+        return { lat: GATEWAYS.Hubs.KCVG.lat, lon: GATEWAYS.Hubs.KCVG.lon };
+      }
+      return { lat: gateways[0].lat, lon: gateways[0].lon };
+    }
+  }
+  
+  // Default to KCVG
+  return { lat: GATEWAYS.Hubs.KCVG.lat, lon: GATEWAYS.Hubs.KCVG.lon };
+}
+
+// Fetch flights from API at selected gateway location
 async function fetchFlights() {
   try {
-    const response = await fetch('/api/flights');
+    const location = getSearchLocation();
+    const url = `/api/flights?lat=${location.lat}&lon=${location.lon}`;
+    
+    console.log(`Fetching flights near ${selectedGateway || selectedRegion || 'KCVG'} (${location.lat.toFixed(4)}, ${location.lon.toFixed(4)})`);
+    
+    const response = await fetch(url);
     const data = await response.json();
     
     if (data.success && data.flights) {
