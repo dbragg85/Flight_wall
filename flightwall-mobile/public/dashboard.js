@@ -8,6 +8,8 @@ const CONFIG = {
   HOME_LON: -84.5677,
   REFRESH_INTERVAL: 30000,
   MAP_ZOOM: 11,
+  // Only show these carrier callsign prefixes
+  CARRIER_FILTER: ['ABX', 'ATN', 'CSB', 'ASA', 'SCX'],
 };
 
 // State
@@ -18,6 +20,7 @@ let rangeCircles = [];
 let flights = [];
 let refreshCountdown = 30;
 let countdownInterval = null;
+let selectedFlight = null;
 
 // Airline logo mappings
 const AIRLINE_LOGOS = {
@@ -139,6 +142,13 @@ function startCountdown() {
   }, 1000);
 }
 
+// Check if flight matches carrier filter
+function matchesCarrierFilter(callsign) {
+  if (!callsign) return false;
+  const prefix = callsign.substring(0, 3).toUpperCase();
+  return CONFIG.CARRIER_FILTER.includes(prefix);
+}
+
 // Fetch flights from API
 async function fetchFlights() {
   try {
@@ -146,7 +156,9 @@ async function fetchFlights() {
     const data = await response.json();
     
     if (data.success && data.flights) {
-      flights = data.flights.sort((a, b) => (a.distanceNm || 999) - (b.distanceNm || 999));
+      // Filter to only show specified carriers
+      const filteredFlights = data.flights.filter(f => matchesCarrierFilter(f.callsign));
+      flights = filteredFlights.sort((a, b) => (a.distanceNm || 999) - (b.distanceNm || 999));
       updateUI();
       document.getElementById('last-updated-time').textContent = new Date().toLocaleTimeString();
     }
@@ -192,8 +204,11 @@ async function fetchWeather() {
 function updateUI() {
   updateFlightCount();
   updateCurrentFlight();
-  updateFlightsTable();
+  updateFlightsList();
   updateMapMarkers();
+  if (selectedFlight) {
+    updateGanttChart(selectedFlight);
+  }
 }
 
 // Update flight count badge
@@ -217,7 +232,7 @@ function getAltitudeColor(altitude) {
   return '#ff4466';
 }
 
-// Update current flight panel
+// Update current flight panel (compact)
 function updateCurrentFlight() {
   const container = document.getElementById('current-flight-content');
   
@@ -225,123 +240,164 @@ function updateCurrentFlight() {
     container.innerHTML = `
       <div class="no-flight">
         <div class="no-flight-icon">📡</div>
-        <h3>No Aircraft Nearby</h3>
-        <p>Scanning airspace within 10 NM...</p>
+        <p>Scanning for carriers...</p>
       </div>
     `;
     return;
   }
   
-  // Get closest flight
-  const flight = flights[0];
+  // Get closest flight or selected flight
+  const flight = selectedFlight || flights[0];
   const airline = getAirlineInfo(flight.callsign);
   const altColor = getAltitudeColor(flight.altitudeFt);
   
-  // Determine if climbing/descending (would need previous data, simplified here)
-  const altTrend = flight.altitudeFt > 10000 ? '↑ CLIMBING' : flight.altitudeFt < 3000 ? '↓ DESCENDING' : '→ LEVEL';
-  
   container.innerHTML = `
-    <div class="flight-hero" style="background: linear-gradient(135deg, ${altColor}22, #16213e);">
-      <div class="flight-hero-overlay">
-        <div class="airline-badge">
-          ${airline.logo ? `<img src="${airline.logo}" class="airline-logo-small" onerror="this.style.display='none'">` : ''}
-          <span>${airline.name}</span>
-        </div>
-        <div class="flight-callsign">
-          ${flight.callsign || 'N/A'}
-          <span class="aircraft-type">${flight.aircraftType || 'Unknown'}</span>
-        </div>
+    <div class="flight-header">
+      ${airline.logo 
+        ? `<img src="${airline.logo}" class="airline-logo" onerror="this.style.display='none'">`
+        : '<span style="font-size:32px">✈️</span>'
+      }
+      <div class="flight-id">
+        <div class="callsign">${flight.callsign || 'N/A'}</div>
+        <div class="aircraft">${airline.name} • ${flight.aircraftType || 'Unknown'}</div>
       </div>
     </div>
     
-    <div class="flight-details">
-      <div class="route-display">
-        <div class="airport-code">
-          <div class="code">${flight.origin || '---'}</div>
-          <div class="name">${flight.originName || 'Origin'}</div>
-        </div>
-        <div class="route-arrow">
-          <div class="route-line"></div>
-          <span class="route-plane">✈️</span>
-          <div class="route-line"></div>
-        </div>
-        <div class="airport-code">
-          <div class="code">${flight.destination || '---'}</div>
-          <div class="name">${flight.destinationName || 'Destination'}</div>
-        </div>
+    <div class="route-compact">
+      <span class="code">${flight.origin || '---'}</span>
+      <span class="arrow">✈️ →</span>
+      <span class="code">${flight.destination || '---'}</span>
+    </div>
+    
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="value" style="color: ${altColor}">${flight.altitudeFt?.toLocaleString() || '--'}</div>
+        <div class="label">Alt (ft)</div>
       </div>
-      
-      <div class="flight-stats">
-        <div class="stat-box">
-          <div class="stat-value" style="color: ${altColor}">${flight.altitudeFt?.toLocaleString() || '--'}</div>
-          <div class="stat-label">Altitude (ft)</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-value">${flight.groundSpeedKt || '--'}</div>
-          <div class="stat-label">Speed (kts)</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-value" style="color: #00ff88">${flight.distanceNm?.toFixed(1) || '--'}</div>
-          <div class="stat-label">Distance (NM)</div>
-        </div>
+      <div class="stat-item">
+        <div class="value">${flight.groundSpeedKt || '--'}</div>
+        <div class="label">Spd (kts)</div>
       </div>
-      
-      <div class="eta-banner">
-        <span class="eta-icon">🎯</span>
-        <div class="eta-text">
-          <h4>${flight.estimatedMinutesAway ? `ARRIVING IN ~${flight.estimatedMinutesAway} MINUTES` : altTrend}</h4>
-          <p>${flight.altitudeFt <= 500 ? 'On ground' : `At ${flight.altitudeFt?.toLocaleString()} ft`} • ${flight.bearing || ''} of home</p>
-        </div>
+      <div class="stat-item">
+        <div class="value" style="color: #00ff88">${flight.distanceNm?.toFixed(1) || '--'}</div>
+        <div class="label">Dist (NM)</div>
       </div>
     </div>
   `;
 }
 
-// Update flights table
-function updateFlightsTable() {
-  const tbody = document.getElementById('flights-table-body');
+// Update flights list (compact)
+function updateFlightsList() {
+  const container = document.getElementById('flights-list');
+  document.getElementById('nearby-count').textContent = flights.length;
   
   if (flights.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="8" style="text-align: center; color: var(--text-secondary); padding: 40px;">
-          No flights detected within range
-        </td>
-      </tr>
+    container.innerHTML = `
+      <div class="no-flight">
+        <div class="no-flight-icon">📋</div>
+        <p>No filtered carriers nearby</p>
+      </div>
     `;
     return;
   }
   
-  tbody.innerHTML = flights.map(flight => {
+  container.innerHTML = flights.map(flight => {
     const airline = getAirlineInfo(flight.callsign);
-    const altColor = getAltitudeColor(flight.altitudeFt);
-    const isClose = flight.distanceNm < 5;
+    const isSelected = selectedFlight && selectedFlight.callsign === flight.callsign;
     
     return `
-      <tr>
-        <td>
-          <div class="airline-cell">
-            ${airline.logo 
-              ? `<img src="${airline.logo}" class="airline-logo-table" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>✈️</text></svg>'">`
-              : '<span style="font-size:24px">✈️</span>'
-            }
-            <span>${airline.name}</span>
-          </div>
-        </td>
-        <td><span class="callsign-link">${flight.callsign || 'N/A'}</span></td>
-        <td>${flight.aircraftType || '--'}</td>
-        <td>${flight.origin || '---'} → ${flight.destination || '---'}</td>
-        <td style="color: ${altColor}">${flight.altitudeFt?.toLocaleString() || '--'} ft ↑</td>
-        <td>${flight.groundSpeedKt || '--'} kts</td>
-        <td class="${isClose ? 'distance-close' : ''}">${flight.distanceNm?.toFixed(1) || '--'} NM</td>
-        <td>
-          <svg class="trend-indicator" viewBox="0 0 40 30">
-            <polyline points="5,25 15,15 25,20 35,5" fill="none" stroke="${altColor}" stroke-width="2"/>
-          </svg>
-        </td>
-      </tr>
+      <div class="flight-row ${isSelected ? 'selected' : ''}" onclick="selectFlight('${flight.callsign}')">
+        ${airline.logo 
+          ? `<img src="${airline.logo}" class="logo" onerror="this.outerHTML='<span style=\\'font-size:20px\\'>✈️</span>'">`
+          : '<span style="font-size:20px">✈️</span>'
+        }
+        <div class="info">
+          <div class="callsign">${flight.callsign || 'N/A'}</div>
+          <div class="route">${flight.origin || '---'} → ${flight.destination || '---'}</div>
+        </div>
+        <div class="distance">${flight.distanceNm?.toFixed(1) || '--'} NM</div>
+      </div>
     `;
   }).join('');
+}
+
+// Select a flight and show Gantt chart
+function selectFlight(callsign) {
+  selectedFlight = flights.find(f => f.callsign === callsign);
+  if (selectedFlight) {
+    document.getElementById('selected-flight-badge').textContent = callsign;
+    updateCurrentFlight();
+    updateFlightsList();
+    updateGanttChart(selectedFlight);
+  }
+}
+
+// Update Gantt chart for selected flight
+function updateGanttChart(flight) {
+  const container = document.getElementById('gantt-container');
+  const airline = getAirlineInfo(flight.callsign);
+  const prefix = flight.callsign?.substring(0, 3).toLowerCase() || 'abx';
+  
+  // Generate mock 24-hour schedule (in real app, this would come from AeroDataBox)
+  const now = new Date();
+  const currentHour = now.getHours();
+  
+  // Create hour headers
+  let hoursHtml = '';
+  for (let i = 0; i < 24; i++) {
+    const hour = (i) % 24;
+    const label = hour === 0 ? '12a' : hour < 12 ? `${hour}a` : hour === 12 ? '12p' : `${hour-12}p`;
+    const isCurrent = hour === currentHour;
+    hoursHtml += `<div class="gantt-hour ${isCurrent ? 'current' : ''}">${label}</div>`;
+  }
+  
+  // Calculate now line position
+  const nowPercent = ((currentHour + now.getMinutes() / 60) / 24) * 100;
+  
+  // Generate sample flight legs for the day
+  const sampleLegs = generateSampleSchedule(flight, prefix);
+  
+  container.innerHTML = `
+    <div class="gantt-header">
+      <div class="gantt-label-col">Flight</div>
+      <div class="gantt-timeline">${hoursHtml}</div>
+    </div>
+    
+    <div class="gantt-row">
+      <div class="gantt-row-label">${flight.callsign}</div>
+      <div class="gantt-row-timeline">
+        <div class="gantt-now-line" style="left: ${nowPercent}%"></div>
+        ${sampleLegs.map(leg => `
+          <div class="gantt-bar ${prefix}" 
+               style="left: ${leg.startPercent}%; width: ${leg.widthPercent}%;"
+               title="${leg.route}">
+            ${leg.route}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// Generate sample schedule data
+function generateSampleSchedule(flight, prefix) {
+  const legs = [];
+  const routes = [
+    { start: 2, end: 5, route: 'CVG→ATL' },
+    { start: 7, end: 10, route: 'ATL→CVG' },
+    { start: 12, end: 15, route: 'CVG→DFW' },
+    { start: 17, end: 20, route: 'DFW→CVG' },
+  ];
+  
+  routes.forEach(r => {
+    legs.push({
+      startPercent: (r.start / 24) * 100,
+      widthPercent: ((r.end - r.start) / 24) * 100,
+      route: r.route,
+    });
+  });
+  
+  return legs;
 }
 
 // Update map markers
