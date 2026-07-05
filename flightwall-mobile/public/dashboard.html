@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a1628">
+  <title>Flight Wall - Live Radar Dashboard</title>
+  
+  <!-- Leaflet CSS for maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <style>
+    :root {
+      --bg-primary: #0a1628;
+      --bg-secondary: #0f1f38;
+      --bg-card: #152238;
+      --bg-card-hover: #1a2d4a;
+      --accent-green: #00ff88;
+      --accent-blue: #00aaff;
+      --accent-orange: #ff9900;
+      --accent-red: #ff4466;
+      --accent-purple: #aa66ff;
+      --text-primary: #ffffff;
+      --text-secondary: #8899aa;
+      --text-muted: #556677;
+      --border-color: #1e3a5f;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 20px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      height: 50px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon { font-size: 24px; }
+
+    .logo-text h1 {
+      font-size: 20px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .logo-text .subtitle {
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+
+    .header-center {
+      font-size: 16px;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    .header-center .date {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: rgba(0, 255, 136, 0.1);
+      border: 1px solid var(--accent-green);
+      border-radius: 16px;
+      font-size: 11px;
+      color: var(--accent-green);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .carrier-filter {
+      font-size: 10px;
+      color: var(--text-muted);
+      padding: 4px 8px;
+      background: var(--bg-card);
+      border-radius: 4px;
+    }
+
+    .header-status {
+      display: flex;
+      gap: 8px;
+    }
+
+    .status-item-mini {
+      font-size: 10px;
+      color: var(--accent-green);
+      padding: 3px 6px;
+      background: rgba(0, 255, 136, 0.1);
+      border-radius: 4px;
+      cursor: default;
+    }
+
+    /* Main Layout - 3-row grid with gateway panel */
+    .main-container {
+      display: grid;
+      grid-template-columns: 280px 1fr 200px;
+      grid-template-rows: auto 1fr auto;
+      gap: 10px;
+      padding: 10px;
+      height: calc(100vh - 50px);
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+
+    .card-header .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: var(--accent-blue);
+      color: white;
+      border-radius: 8px;
+    }
+
+    /* Current Flight Panel - Compact (top left) */
+    .current-flight {
+      grid-row: 1;
+      grid-column: 1;
+      max-height: 160px;
+    }
+
+    .flight-content {
+      padding: 12px;
+      flex: 1;
+      overflow: auto;
+    }
+
+    .flight-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .airline-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 6px;
+      background: white;
+      padding: 4px;
+    }
+
+    .flight-id {
+      flex: 1;
+    }
+
+    .flight-id .callsign {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .flight-id .aircraft {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .flight-id .registration {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+
+    .delay-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: rgba(255, 68, 102, 0.2);
+      color: var(--accent-red);
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+
+    .status-badge-small {
+      font-size: 9px;
+      padding: 2px 5px;
+      background: rgba(0, 170, 255, 0.2);
+      color: var(--accent-blue);
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+
+    .route-endpoint {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .city-name {
+      font-size: 9px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .route-compact {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 10px;
+      background: var(--bg-secondary);
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+
+    .route-compact .code {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent-blue);
+    }
+
+    .route-compact .arrow {
+      color: var(--text-muted);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .stat-item {
+      text-align: center;
+      padding: 8px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+    }
+
+    .stat-item .value {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .stat-item .label {
+      font-size: 9px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+    }
+
+    /* Nearby Flights - Middle Left */
+    .nearby-flights {
+      grid-row: 2;
+      grid-column: 1;
+      min-height: 120px;
+    }
+
+    /* Historical Flights - Bottom Left */
+    .historical-flights {
+      grid-row: 3;
+      grid-column: 1;
+      max-height: 180px;
+    }
+
+    .historical-content {
+      padding: 8px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .carrier-stats {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .carrier-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+    }
+
+    .carrier-row .carrier-code {
+      font-weight: 700;
+      color: var(--accent-blue);
+      font-size: 12px;
+      width: 40px;
+    }
+
+    .carrier-row .carrier-name {
+      flex: 1;
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-left: 8px;
+    }
+
+    .carrier-row .flight-count {
+      font-weight: 700;
+      color: var(--accent-green);
+      font-size: 14px;
+      min-width: 30px;
+      text-align: right;
+    }
+
+    .carrier-row .flight-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      margin-left: 4px;
+    }
+
+    .no-history {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 20px;
+      font-size: 11px;
+    }
+
+    .flights-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .flight-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .flight-row:hover, .flight-row.selected {
+      background: var(--bg-card-hover);
+    }
+
+    .flight-row .logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 4px;
+      background: white;
+      padding: 2px;
+    }
+
+    .flight-row .info {
+      flex: 1;
+    }
+
+    .flight-row .callsign {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--accent-blue);
+    }
+
+    .flight-row .route {
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+
+    .flight-row .distance {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-green);
+    }
+
+    /* Radar Map - Top and Middle Center */
+    .radar-section {
+      grid-row: 1 / 3;
+      grid-column: 2;
+    }
+
+    /* Gateway Selector - Top and Middle Right */
+    .gateway-section {
+      grid-row: 1 / 3;
+      grid-column: 3;
+    }
+
+    /* TAF Display */
+    .taf-container {
+      padding: 8px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 10px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    .taf-placeholder, .taf-unavailable, .taf-loading {
+      color: var(--text-muted);
+      text-align: center;
+      padding: 8px;
+    }
+
+    .taf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .taf-icao {
+      font-weight: 700;
+      color: var(--accent-blue);
+    }
+
+    .taf-category {
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+      font-size: 9px;
+    }
+
+    .taf-category.vfr {
+      background: rgba(0, 255, 136, 0.2);
+      color: var(--accent-green);
+    }
+
+    .taf-category.mvfr {
+      background: rgba(0, 170, 255, 0.2);
+      color: var(--accent-blue);
+    }
+
+    .taf-category.ifr {
+      background: rgba(255, 68, 102, 0.2);
+      color: var(--accent-red);
+    }
+
+    .taf-category.lifr {
+      background: rgba(170, 102, 255, 0.2);
+      color: var(--accent-purple);
+    }
+
+    .taf-raw {
+      font-family: monospace;
+      font-size: 9px;
+      color: var(--text-secondary);
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
+    .gateway-categories {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .gateway-category {
+      margin-bottom: 8px;
+    }
+
+    .category-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--bg-secondary);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-blue);
+    }
+
+    .category-header:hover {
+      background: var(--bg-card-hover);
+    }
+
+    .category-header.active {
+      background: var(--accent-blue);
+      color: white;
+    }
+
+    .category-header .count {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: rgba(0, 170, 255, 0.2);
+      border-radius: 8px;
+      color: var(--accent-blue);
+    }
+
+    .category-header.active .count {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+    }
+
+    .category-toggle {
+      font-size: 10px;
+      transition: transform 0.2s;
+    }
+
+    .category-header.expanded .category-toggle {
+      transform: rotate(180deg);
+    }
+
+    .gateway-list {
+      display: none;
+      padding: 4px 0 4px 8px;
+    }
+
+    .gateway-list.expanded {
+      display: block;
+    }
+
+    .gateway-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.2s;
+      border-left: 2px solid transparent;
+    }
+
+    .gateway-item:hover {
+      background: var(--bg-card-hover);
+    }
+
+    .gateway-item.selected {
+      background: rgba(0, 255, 136, 0.1);
+      border-left-color: var(--accent-green);
+    }
+
+    .gateway-item .icao {
+      font-weight: 600;
+      color: var(--accent-green);
+      width: 45px;
+    }
+
+    .gateway-item .name {
+      color: var(--text-secondary);
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #radar-map {
+      flex: 1;
+      min-height: 200px;
+    }
+
+    .radar-legend {
+      display: flex;
+      gap: 12px;
+      padding: 6px 12px;
+      background: var(--bg-secondary);
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .refresh-info {
+      margin-left: auto;
+      display: flex;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+
+    .last-update {
+      color: var(--text-secondary);
+    }
+
+    /* Gantt Chart - Bottom spanning center and right */
+    .gantt-section {
+      grid-row: 3;
+      grid-column: 2 / 4;
+      max-height: 200px;
+    }
+
+    .gantt-container {
+      flex: 1;
+      overflow: auto;
+      padding: 12px;
+    }
+
+    .gantt-header {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+    }
+
+    .gantt-label-col {
+      width: 100px;
+      flex-shrink: 0;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+
+    .gantt-timeline {
+      flex: 1;
+      display: flex;
+    }
+
+    .gantt-hour {
+      flex: 1;
+      text-align: center;
+      font-size: 9px;
+      color: var(--text-muted);
+      border-left: 1px solid var(--border-color);
+    }
+
+    .gantt-hour.current {
+      color: var(--accent-green);
+      font-weight: 600;
+    }
+
+    .gantt-row {
+      display: flex;
+      align-items: center;
+      height: 32px;
+      margin-bottom: 4px;
+    }
+
+    .gantt-row-label {
+      width: 100px;
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-blue);
+    }
+
+    .gantt-row-timeline {
+      flex: 1;
+      height: 24px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      position: relative;
+    }
+
+    .gantt-bar {
+      position: absolute;
+      height: 100%;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      font-size: 9px;
+      font-weight: 600;
+      color: white;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .gantt-bar:hover {
+      opacity: 0.8;
+    }
+
+    .gantt-bar.abx { background: linear-gradient(90deg, #ff9900, #ffaa33); }
+    .gantt-bar.atn { background: linear-gradient(90deg, #ff6600, #ff8833); }
+    .gantt-bar.asa { background: linear-gradient(90deg, #00aaff, #33bbff); }
+    .gantt-bar.scx { background: linear-gradient(90deg, #aa66ff, #bb88ff); }
+    .gantt-bar.csb { background: linear-gradient(90deg, #00ff88, #33ffaa); }
+
+    .gantt-now-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--accent-red);
+      z-index: 10;
+    }
+
+    .no-schedule {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .no-schedule-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+      opacity: 0.5;
+    }
+
+    /* Gantt loading state */
+    .gantt-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100px;
+      color: var(--text-secondary);
+    }
+
+    .loading-spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--accent-blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 10px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Gantt status colors */
+    .gantt-bar.completed { opacity: 0.6; }
+    .gantt-bar.active { box-shadow: 0 0 8px var(--accent-green); }
+    .gantt-bar.departed { box-shadow: 0 0 6px var(--accent-blue); }
+    .gantt-bar.cancelled { 
+      background: linear-gradient(90deg, #666, #888) !important; 
+      text-decoration: line-through;
+    }
+    .gantt-bar.delayed { 
+      background: linear-gradient(90deg, var(--accent-red), #ff6677) !important;
+    }
+
+    .gantt-hour.past {
+      opacity: 0.5;
+    }
+
+    .gantt-no-data {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    /* Schedule list below Gantt */
+    .schedule-list {
+      margin-top: 16px;
+      border-top: 1px solid var(--border-color);
+      padding-top: 12px;
+    }
+
+    .schedule-list-header {
+      font-size: 10px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .schedule-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+
+    .schedule-item.completed { opacity: 0.6; }
+    .schedule-item.active { border-left: 3px solid var(--accent-green); }
+    .schedule-item.departed { border-left: 3px solid var(--accent-blue); }
+    .schedule-item.cancelled { 
+      opacity: 0.5; 
+      text-decoration: line-through;
+    }
+    .schedule-item.delayed { border-left: 3px solid var(--accent-red); }
+
+    .schedule-route {
+      font-weight: 600;
+      color: var(--accent-blue);
+    }
+
+    .schedule-times {
+      color: var(--text-secondary);
+    }
+
+    .schedule-status {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--bg-card);
+      color: var(--text-muted);
+    }
+
+    .schedule-item.active .schedule-status {
+      background: rgba(0, 255, 136, 0.2);
+      color: var(--accent-green);
+    }
+
+    .schedule-item.delayed .schedule-status {
+      background: rgba(255, 68, 102, 0.2);
+      color: var(--accent-red);
+    }
+
+    /* Gateway marker */
+    .gateway-marker-container {
+      background: transparent;
+    }
+
+    .gateway-marker {
+      background: var(--accent-orange);
+      color: white;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 3px 6px;
+      border-radius: 3px;
+      border: 1px solid white;
+      box-shadow: 0 0 10px var(--accent-orange);
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    /* Flight status indicators on map */
+    .flight-status-indicator {
+      background: transparent;
+    }
+
+    .status-label {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .status-label.delayed {
+      background: rgba(255, 153, 0, 0.9);
+      color: white;
+      box-shadow: 0 0 10px rgba(255, 153, 0, 0.5);
+    }
+
+    .status-label.diverted {
+      background: rgba(255, 68, 102, 0.9);
+      color: white;
+      box-shadow: 0 0 10px rgba(255, 68, 102, 0.5);
+      animation: pulse-alert 1s infinite;
+    }
+
+    @keyframes pulse-alert {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    /* Schedule item delay/diversion indicators */
+    .schedule-item .delay-indicator {
+      font-size: 9px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      margin-left: 6px;
+    }
+
+    .delay-indicator.delayed {
+      background: rgba(255, 153, 0, 0.2);
+      color: var(--accent-orange);
+    }
+
+    .delay-indicator.diverted {
+      background: rgba(255, 68, 102, 0.2);
+      color: var(--accent-red);
+    }
+
+    /* No flight state */
+    .no-flight {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+      color: var(--text-secondary);
+    }
+
+    .no-flight-icon {
+      font-size: 36px;
+      margin-bottom: 8px;
+      opacity: 0.5;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-secondary);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="logo">
+      <span class="logo-icon">✈️</span>
+      <div class="logo-text">
+        <h1>FLIGHT WALL</h1>
+        <span class="subtitle">Gateway Network Monitor</span>
+      </div>
+    </div>
+    
+    <div class="header-center">
+      <span id="current-time">--:--Z</span>
+      <div class="date" id="current-date">Loading...</div>
+    </div>
+    
+    <div class="header-right">
+      <span class="carrier-filter">ABX • ATN • CSB • ASA • SCX</span>
+      
+      <!-- System Status in Header -->
+      <div class="header-status">
+        <span class="status-item-mini" title="Data Feed">🟢 Feed</span>
+        <span class="status-item-mini" title="Notifications">🔔 Ntfy</span>
+        <span class="status-item-mini" title="API">🌐 API</span>
+      </div>
+      
+      <div class="status-badge">
+        <span class="status-dot"></span>
+        <span>CONNECTED</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-container">
+    <!-- Current Flight Panel - Top Left -->
+    <section class="card current-flight">
+      <div class="card-header">
+        Current Flight
+        <span class="badge" id="flight-count-badge">0</span>
+      </div>
+      <div class="flight-content" id="current-flight-content">
+        <div class="no-flight">
+          <div class="no-flight-icon">📡</div>
+          <p>Scanning for carriers...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live Radar Map - Top Center -->
+    <section class="card radar-section">
+      <div class="card-header">
+        Live Radar
+        <span class="badge" id="radar-gateway-badge">KCVG</span>
+      </div>
+      <div id="radar-map"></div>
+      <div class="radar-legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background: #00ff88;"></div>
+          <span>5 NM</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: #00aaff;"></div>
+          <span>10 NM</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: #ffaa00;"></div>
+          <span>10-20K ft</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: #ff4466;"></div>
+          <span>20K+ ft</span>
+        </div>
+        <div class="legend-item refresh-info">
+          <span id="radar-timestamp">Radar: --:--Z</span>
+          <span>Refresh: <span id="refresh-countdown">30</span>s</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Nearby Flights - Bottom Left -->
+    <section class="card nearby-flights">
+      <div class="card-header">
+        Nearby Flights
+        <span class="badge" id="nearby-count">0</span>
+      </div>
+      <div class="flights-list" id="flights-list">
+        <div class="no-flight">
+          <div class="no-flight-icon">📋</div>
+          <p>No filtered carriers nearby</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Historical Flights - Bottom Left -->
+    <section class="card historical-flights">
+      <div class="card-header">
+        24-Hour History
+        <span class="badge" id="history-total">0</span>
+      </div>
+      <div class="historical-content" id="historical-content">
+        <div class="no-history">Select a gateway to view history</div>
+      </div>
+    </section>
+
+    <!-- Gateway Selector - Top Right -->
+    <section class="card gateway-section">
+      <div class="card-header">
+        Gateways
+        <span class="badge" id="gateway-count">47</span>
+      </div>
+      <div class="taf-container" id="taf-display">
+        <div class="taf-placeholder">Select a gateway to view TAF</div>
+      </div>
+      <div class="gateway-categories" id="gateway-categories">
+        <!-- Categories populated by JS -->
+      </div>
+    </section>
+
+    <!-- Gantt Chart - Bottom Right -->
+    <section class="card gantt-section">
+      <div class="card-header">
+        48-Hour Schedule (-24h to +24h)
+        <span class="badge" id="selected-flight-badge">Select a flight</span>
+      </div>
+      <div class="gantt-container" id="gantt-container">
+        <div class="no-schedule">
+          <div class="no-schedule-icon">📅</div>
+          <p>Click a flight to view its 48-hour schedule</p>
+          <p style="font-size: 10px; margin-top: 4px; opacity: 0.7;">Real-time data from AeroDataBox API</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

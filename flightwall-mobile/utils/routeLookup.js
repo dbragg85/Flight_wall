@@ -55,8 +55,8 @@ async function lookupRoute(callsign) {
       return null;
     }
     
-    // Find the most relevant flight (in progress or most recent)
-    const flight = findRelevantFlight(flights);
+    // Find the most relevant flight (exact callsign match preferred)
+    const flight = findRelevantFlight(flights, cleanCallsign);
     
     if (!flight) {
       routeCache.set(cleanCallsign, { data: null, timestamp: Date.now() });
@@ -109,9 +109,13 @@ async function lookupRoute(callsign) {
 
 /**
  * Find the most relevant flight from API results
- * Prefers in-progress flights, then most recent
+ * Prefers exact callsign match, then in-progress flights, then most recent
  */
-function findRelevantFlight(flights) {
+function findRelevantFlight(flights, targetCallsign) {
+  if (!flights || flights.length === 0) return null;
+  
+  const cleanTarget = targetCallsign?.trim().toUpperCase();
+  
   // Priority: EnRoute > Departed > Expected > Arrived
   const statusPriority = {
     'EnRoute': 4,
@@ -121,10 +125,29 @@ function findRelevantFlight(flights) {
     'Unknown': 0,
   };
   
-  return flights.reduce((best, current) => {
+  // First, filter to exact callsign matches if possible
+  const exactMatches = flights.filter(f => {
+    const flightCallsign = (f.callSign || '').trim().toUpperCase();
+    return flightCallsign === cleanTarget;
+  });
+  
+  // Use exact matches if available, otherwise use all flights
+  const candidates = exactMatches.length > 0 ? exactMatches : flights;
+  
+  // Sort by status priority, then by most recent update
+  return candidates.reduce((best, current) => {
     const currentPriority = statusPriority[current.status] || 0;
     const bestPriority = statusPriority[best?.status] || -1;
-    return currentPriority > bestPriority ? current : best;
+    
+    // Prefer higher status priority
+    if (currentPriority !== bestPriority) {
+      return currentPriority > bestPriority ? current : best;
+    }
+    
+    // If same priority, prefer more recent
+    const currentTime = new Date(current.lastUpdatedUtc || 0).getTime();
+    const bestTime = new Date(best?.lastUpdatedUtc || 0).getTime();
+    return currentTime > bestTime ? current : best;
   }, null);
 }
 
@@ -383,6 +406,210 @@ function clearRouteCache() {
   console.log('🧹 Caches cleared');
 }
 
+/**
+ * Fetch flight schedule for 24 hours prior and 24 hours future
+ * Uses the Flight History & Schedule endpoint
+ * @param {string} callsign - Flight callsign (e.g., "ABX306")
+ * @param {string} registration - Aircraft registration (optional, e.g., "N767AX")
+ * @returns {Promise<Array>} Array of scheduled flights
+ */
+async function lookupFlightSchedule(callsign, registration = null) {
+  const apiKey = process.env.RAPIDAPI_KEY;
+  if (!apiKey) {
+    console.warn('⚠️  No RapidAPI key for schedule lookup');
+    return [];
+  }
+  
+  // Calculate date range: 24 hours ago to 24 hours ahead
+  const now = new Date();
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  
+  const dateFrom = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
+  const dateTo = tomorrow.toISOString().split('T')[0];
+  
+  // Try registration FIRST (shows full aircraft schedule), then callsign as fallback
+  const searchMethods = [];
+  
+  if (registration) {
+    const cleanReg = registration.trim().toUpperCase().replace(/-/g, '');
+    searchMethods.push({ type: 'Reg', param: cleanReg });
+  }
+  
+  if (callsign) {
+    const cleanCallsign = callsign.trim().toUpperCase();
+    searchMethods.push({ type: 'CallSign', param: cleanCallsign });
+  }
+  
+  for (const method of searchMethods) {
+    try {
+      console.log(`🔍 Looking up schedule: ${method.type}=${method.param} from ${dateFrom} to ${dateTo}`);
+      
+      const response = await axios.get(
+        `https://aerodatabox.p.rapidapi.com/flights/${method.type}/${method.param}/${dateFrom}/${dateTo}`,
+        {
+          headers: {
+            'x-rapidapi-key': apiKey,
+            'x-rapidapi-host': 'aerodatabox.p.rapidapi.com',
+          },
+          timeout: 15000,
+        }
+      );
+      
+      const flights = response.data;
+      
+      if (!Array.isArray(flights) || flights.length === 0) {
+        console.log(`📭 No schedule found for ${method.type}=${method.param}`);
+        continue;
+      }
+      
+      console.log(`✅ Found ${flights.length} scheduled flights`);
+      
+      // Transform the data into a usable format
+      const schedule = flights.map(flight => {
+        const depScheduled = flight.departure?.scheduledTime?.utc;
+        const depActual = flight.departure?.actualTime?.utc || flight.departure?.runwayTime?.utc;
+        const arrScheduled = flight.arrival?.scheduledTime?.utc;
+        const arrActual = flight.arrival?.actualTime?.utc || flight.arrival?.runwayTime?.utc;
+        const arrRevised = flight.arrival?.revisedTime?.utc;
+        
+        // Calculate delay in minutes
+        let delayMinutes = 0;
+        if (depScheduled && depActual) {
+          delayMinutes = Math.round((new Date(depActual) - new Date(depScheduled)) / 60000);
+        }
+        
+        // Check for potential diversion (revised arrival significantly different)
+        let isDiverted = false;
+        if (arrScheduled && arrRevised) {
+          const arrDiff = Math.abs(new Date(arrRevised) - new Date(arrScheduled)) / 60000;
+          if (arrDiff > 120) { // More than 2 hours difference might indicate diversion
+            isDiverted = true;
+          }
+        }
+        
+        return {
+          flightNumber: flight.number || null,
+          callsign: flight.callSign || callsign,
+          status: flight.status || 'Unknown',
+          origin: flight.departure?.airport?.iata || null,
+          originName: flight.departure?.airport?.name || null,
+          originLat: flight.departure?.airport?.location?.lat || null,
+          originLon: flight.departure?.airport?.location?.lon || null,
+          destination: flight.arrival?.airport?.iata || null,
+          destinationName: flight.arrival?.airport?.name || null,
+          destLat: flight.arrival?.airport?.location?.lat || null,
+          destLon: flight.arrival?.airport?.location?.lon || null,
+          departureScheduled: depScheduled,
+          departureActual: depActual,
+          arrivalScheduled: arrScheduled,
+          arrivalActual: arrActual,
+          arrivalRevised: arrRevised,
+          aircraftReg: flight.aircraft?.reg || registration,
+          aircraftModel: flight.aircraft?.model || null,
+          airline: flight.airline?.name || null,
+          delayMinutes: delayMinutes,
+          isDelayed: delayMinutes > 15,
+          isDiverted: isDiverted,
+          isCargo: flight.isCargo || false,
+        };
+      });
+      
+      // Sort by departure time
+      schedule.sort((a, b) => {
+        const timeA = new Date(a.departureScheduled || a.departureActual || 0);
+        const timeB = new Date(b.departureScheduled || b.departureActual || 0);
+        return timeA - timeB;
+      });
+      
+      return schedule;
+      
+    } catch (error) {
+      if (error.response?.status === 404) {
+        console.log(`📭 No schedule data for ${method.type}=${method.param}`);
+      } else if (error.response?.status === 429) {
+        console.warn('⚠️  AeroDataBox rate limit reached for schedule lookup');
+        return [];
+      } else {
+        console.error(`❌ Schedule lookup error: ${error.message}`);
+      }
+    }
+  }
+  
+  return [];
+}
+
+/**
+ * Get CVG airport FIDS (Flight Information Display) - departures and arrivals
+ * @param {string} direction - 'departure' or 'arrival'
+ * @returns {Promise<Array>} Array of flights
+ */
+async function lookupAirportSchedule(airportCode = 'CVG', direction = 'departure') {
+  const apiKey = process.env.RAPIDAPI_KEY;
+  if (!apiKey) return [];
+  
+  // Calculate time range: now to 12 hours ahead
+  const now = new Date();
+  const future = new Date(now.getTime() + 12 * 60 * 60 * 1000);
+  
+  const fromTime = now.toISOString().replace('Z', '');
+  const toTime = future.toISOString().replace('Z', '');
+  
+  try {
+    console.log(`🔍 Looking up ${airportCode} ${direction}s...`);
+    
+    const response = await axios.get(
+      `https://aerodatabox.p.rapidapi.com/flights/airports/iata/${airportCode}/${fromTime}/${toTime}`,
+      {
+        headers: {
+          'x-rapidapi-key': apiKey,
+          'x-rapidapi-host': 'aerodatabox.p.rapidapi.com',
+        },
+        params: {
+          direction: direction,
+          withCancelled: false,
+          withCodeshared: false,
+        },
+        timeout: 15000,
+      }
+    );
+    
+    const data = response.data;
+    const flights = direction === 'departure' ? data.departures : data.arrivals;
+    
+    if (!Array.isArray(flights)) return [];
+    
+    console.log(`✅ Found ${flights.length} ${direction}s at ${airportCode}`);
+    
+    return flights.map(flight => ({
+      flightNumber: flight.number,
+      callsign: flight.callSign,
+      airline: flight.airline?.name,
+      origin: direction === 'arrival' ? flight.departure?.airport?.iata : airportCode,
+      destination: direction === 'departure' ? flight.arrival?.airport?.iata : airportCode,
+      scheduledTime: direction === 'departure' 
+        ? flight.departure?.scheduledTime?.utc 
+        : flight.arrival?.scheduledTime?.utc,
+      actualTime: direction === 'departure'
+        ? flight.departure?.actualTime?.utc
+        : flight.arrival?.actualTime?.utc,
+      status: flight.status,
+      terminal: direction === 'departure'
+        ? flight.departure?.terminal
+        : flight.arrival?.terminal,
+      gate: direction === 'departure'
+        ? flight.departure?.gate
+        : flight.arrival?.gate,
+      aircraftReg: flight.aircraft?.reg,
+      aircraftModel: flight.aircraft?.model,
+    }));
+    
+  } catch (error) {
+    console.error(`❌ Airport schedule error: ${error.message}`);
+    return [];
+  }
+}
+
 module.exports = {
   lookupRoute,
   lookupAircraft,
@@ -392,4 +619,6 @@ module.exports = {
   calculateDistanceRemaining,
   getDelayStatus,
   clearRouteCache,
+  lookupFlightSchedule,
+  lookupAirportSchedule,
 };

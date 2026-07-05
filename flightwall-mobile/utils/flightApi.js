@@ -246,9 +246,11 @@ function parseSpeed(rawFlight) {
 
 /**
  * Fetch flights from RapidAPI
+ * @param {number} overrideLat - Optional latitude to search from (overrides HOME_LAT)
+ * @param {number} overrideLon - Optional longitude to search from (overrides HOME_LON)
  * @returns {Promise<Array>} Array of normalized flight objects
  */
-async function fetchFlights() {
+async function fetchFlights(overrideLat = null, overrideLon = null) {
   const {
     RAPIDAPI_KEY,
     RAPIDAPI_HOST,
@@ -260,23 +262,32 @@ async function fetchFlights() {
     MAX_ALTITUDE_FT,
   } = process.env;
   
-  if (!RAPIDAPI_KEY || !RAPIDAPI_HOST || !RAPIDAPI_URL) {
+  // Use override coordinates if provided, otherwise use env defaults
+  const homeLat = overrideLat !== null ? overrideLat : parseFloat(HOME_LAT);
+  const homeLon = overrideLon !== null ? overrideLon : parseFloat(HOME_LON);
+  
+  if (!RAPIDAPI_KEY || !RAPIDAPI_HOST) {
     console.warn('⚠️  RapidAPI credentials not configured. Using mock data.');
-    return getMockFlights(parseFloat(HOME_LAT), parseFloat(HOME_LON));
+    return getMockFlights(homeLat, homeLon);
   }
   
-  const homeLat = parseFloat(HOME_LAT);
-  const homeLon = parseFloat(HOME_LON);
   const searchRadius = parseFloat(SEARCH_RADIUS_NM) || 25;
   const minAlt = parseFloat(MIN_ALTITUDE_FT) || 0;
   const maxAlt = parseFloat(MAX_ALTITUDE_FT) || 45000;
   
   try {
-    // ADS-B Exchange URL already contains lat/lon/dist in the path
-    // No need to add query params for this API
-    let url = RAPIDAPI_URL;
+    // Build URL for ADS-B Exchange API
+    // Format: https://adsbexchange-com1.p.rapidapi.com/v2/lat/{lat}/lon/{lon}/dist/{dist}/
+    let url;
+    if (overrideLat !== null && overrideLon !== null) {
+      // Construct new URL with override coordinates
+      url = `https://adsbexchange-com1.p.rapidapi.com/v2/lat/${homeLat}/lon/${homeLon}/dist/${searchRadius}/`;
+    } else {
+      // Use default URL from env
+      url = RAPIDAPI_URL;
+    }
     
-    console.log(`📡 Fetching flights within ${searchRadius} NM of (${homeLat}, ${homeLon})...`);
+    console.log(`📡 Fetching flights within ${searchRadius} NM of (${homeLat.toFixed(4)}, ${homeLon.toFixed(4)})...`);
     
     const response = await axios.get(url, {
       headers: {

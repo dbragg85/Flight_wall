@@ -13,7 +13,7 @@ const os = require('os');
 const { fetchFlights } = require('./utils/flightApi');
 const { processFlights, loadActiveFlights, getRecentEvents } = require('./utils/flightLogic');
 const { sendNotification, sendTestNotification, sendBatchNotifications } = require('./utils/notifier');
-const { enrichFlightWithRoute } = require('./utils/routeLookup');
+const { enrichFlightWithRoute, lookupFlightSchedule, lookupAirportSchedule, lookupRoute } = require('./utils/routeLookup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,9 +32,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 /**
  * GET /api/flights
  * Returns current active flights
+ * Supports optional lat/lon query params to search from a different location
  */
-app.get('/api/flights', (req, res) => {
+app.get('/api/flights', async (req, res) => {
   try {
+    const { lat, lon } = req.query;
+    
+    // If lat/lon provided, fetch flights from that location
+    if (lat && lon) {
+      const flights = await fetchFlights(parseFloat(lat), parseFloat(lon));
+      return res.json({
+        success: true,
+        flights: flights || [],
+        lastUpdated: new Date().toISOString(),
+        count: (flights || []).length,
+        location: { lat: parseFloat(lat), lon: parseFloat(lon) },
+      });
+    }
+    
+    // Otherwise return cached active flights from polling
     const data = loadActiveFlights();
     res.json({
       success: true,
@@ -136,10 +152,312 @@ app.post('/api/trigger-poll', async (req, res) => {
 
 /**
  * GET /
- * Serve the dashboard
+ * Serve the simple mobile dashboard
  */
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+/**
+ * GET /radar
+ * Serve the visual radar dashboard
+ */
+app.get('/radar', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+/**
+ * GET /api/route/:callsign
+ * Returns route info (origin, destination) for a callsign
+ */
+app.get('/api/route/:callsign', async (req, res) => {
+  try {
+    const { callsign } = req.params;
+    
+    if (!callsign) {
+      return res.status(400).json({ success: false, error: 'Callsign required' });
+    }
+    
+    console.log(`🛫 Route lookup for ${callsign}`);
+    
+    const routeInfo = await lookupRoute(callsign);
+    
+    if (!routeInfo) {
+      return res.json({
+        success: true,
+        callsign,
+        route: null,
+        message: 'No route data available',
+      });
+    }
+    
+    res.json({
+      success: true,
+      callsign,
+      route: {
+        origin: routeInfo.origin,
+        originName: routeInfo.originName,
+        destination: routeInfo.destination,
+        destinationName: routeInfo.destinationName,
+        flightNumber: routeInfo.flightNumber,
+        airlineName: routeInfo.airlineName,
+        aircraftModel: routeInfo.aircraftModel,
+        registration: routeInfo.registration,
+        status: routeInfo.status,
+        isDelayed: routeInfo.isDelayed,
+        delayMinutes: routeInfo.delayMinutes,
+      },
+    });
+    
+  } catch (error) {
+    console.error('Error fetching route:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/schedule/:callsign
+ * Returns 48-hour flight schedule (24h past + 24h future) for a callsign or registration
+ */
+app.get('/api/schedule/:callsign', async (req, res) => {
+  try {
+    const { callsign } = req.params;
+    const { registration } = req.query;
+    
+    if (!callsign) {
+      return res.status(400).json({ success: false, error: 'Callsign required' });
+    }
+    
+    console.log(`📅 Schedule request for ${callsign}${registration ? ` (reg: ${registration})` : ''}`);
+    
+    const schedule = await lookupFlightSchedule(callsign, registration);
+    
+    console.log(`📅 Schedule result for ${callsign}: ${schedule.length} entries`);
+    if (schedule.length > 0) {
+      console.log(`   First entry: ${schedule[0].origin} → ${schedule[0].destination}`);
+    }
+    
+    res.json({
+      success: true,
+      callsign,
+      registration: registration || null,
+      schedule,
+      count: schedule.length,
+      dateRange: {
+        from: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      },
+    });
+    
+  } catch (error) {
+    console.error('Error fetching schedule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/taf/:icao
+ * Returns TAF (Terminal Aerodrome Forecast) for an airport
+ */
+app.get('/api/taf/:icao', async (req, res) => {
+  try {
+    const { icao } = req.params;
+    
+    if (!icao) {
+      return res.status(400).json({ success: false, error: 'ICAO code required' });
+    }
+    
+    console.log(`🌤️  TAF request for ${icao}`);
+    
+    const axios = require('axios');
+    const response = await axios.get(
+      `https://aviationweather.gov/api/data/taf?ids=${icao}&format=json`,
+      { timeout: 10000 }
+    );
+    
+    if (response.data && response.data.length > 0) {
+      const taf = response.data[0];
+      res.json({
+        success: true,
+        icao: taf.icaoId,
+        rawTAF: taf.rawTAF,
+        issueTime: taf.issueTime,
+        validFrom: taf.validTimeFrom,
+        validTo: taf.validTimeTo,
+        forecasts: taf.fcsts,
+        name: taf.name,
+      });
+    } else {
+      res.json({
+        success: true,
+        icao,
+        rawTAF: null,
+        message: 'No TAF available',
+      });
+    }
+    
+  } catch (error) {
+    console.error('Error fetching TAF:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/radar
+ * Returns weather radar tile URLs from RainViewer
+ */
+app.get('/api/radar', async (req, res) => {
+  try {
+    const axios = require('axios');
+    const response = await axios.get(
+      'https://api.rainviewer.com/public/weather-maps.json',
+      { timeout: 10000 }
+    );
+    
+    const data = response.data;
+    
+    res.json({
+      success: true,
+      host: data.host,
+      radar: {
+        past: data.radar.past.slice(-6), // Last 6 frames (30 min)
+        nowcast: data.radar.nowcast || [],
+      },
+      generated: data.generated,
+    });
+    
+  } catch (error) {
+    console.error('Error fetching radar:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/airport/:code/history
+ * Returns 24-hour flight history aggregated by carrier
+ */
+app.get('/api/airport/:code/history', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const apiKey = process.env.RAPIDAPI_KEY;
+    
+    if (!apiKey) {
+      return res.json({ success: false, error: 'API key not configured' });
+    }
+    
+    // Calculate 24-hour window
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    const fromTime = yesterday.toISOString().replace('Z', '');
+    const toTime = now.toISOString().replace('Z', '');
+    
+    console.log(`📊 Fetching 24h history for ${code}`);
+    
+    const axios = require('axios');
+    const response = await axios.get(
+      `https://aerodatabox.p.rapidapi.com/flights/airports/iata/${code}/${fromTime}/${toTime}`,
+      {
+        headers: {
+          'x-rapidapi-key': apiKey,
+          'x-rapidapi-host': 'aerodatabox.p.rapidapi.com',
+        },
+        params: {
+          direction: 'Both',
+          withCancelled: false,
+          withCodeshared: false,
+        },
+        timeout: 15000,
+      }
+    );
+    
+    const data = response.data;
+    const allFlights = [...(data.departures || []), ...(data.arrivals || [])];
+    
+    // Aggregate by carrier (ICAO code)
+    const carrierStats = {};
+    
+    allFlights.forEach(flight => {
+      const icao = flight.airline?.icao;
+      if (!icao) return;
+      
+      if (!carrierStats[icao]) {
+        carrierStats[icao] = {
+          name: flight.airline?.name || 'Unknown',
+          iata: flight.airline?.iata || null,
+          count: 0,
+          flights: [],
+        };
+      }
+      
+      carrierStats[icao].count++;
+      carrierStats[icao].flights.push({
+        number: flight.number,
+        callsign: flight.callSign,
+        origin: flight.departure?.airport?.iata,
+        destination: flight.arrival?.airport?.iata,
+        status: flight.status,
+      });
+    });
+    
+    console.log(`📊 Found ${allFlights.length} flights, ${Object.keys(carrierStats).length} carriers`);
+    
+    res.json({
+      success: true,
+      airport: code,
+      totalFlights: allFlights.length,
+      carrierStats,
+      period: {
+        from: yesterday.toISOString(),
+        to: now.toISOString(),
+      },
+    });
+    
+  } catch (error) {
+    if (error.response?.status === 429) {
+      console.warn('⚠️  Rate limit reached for airport history');
+    } else {
+      console.error('Error fetching airport history:', error.message);
+    }
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/airport/:code/schedule
+ * Returns airport departures and arrivals
+ */
+app.get('/api/airport/:code/schedule', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { direction = 'both' } = req.query;
+    
+    let departures = [];
+    let arrivals = [];
+    
+    if (direction === 'both' || direction === 'departure') {
+      departures = await lookupAirportSchedule(code, 'departure');
+    }
+    
+    if (direction === 'both' || direction === 'arrival') {
+      arrivals = await lookupAirportSchedule(code, 'arrival');
+    }
+    
+    res.json({
+      success: true,
+      airport: code,
+      departures,
+      arrivals,
+      counts: {
+        departures: departures.length,
+        arrivals: arrivals.length,
+      },
+    });
+    
+  } catch (error) {
+    console.error('Error fetching airport schedule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // ============================================
