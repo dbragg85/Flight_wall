@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>FlightWall Mobile</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <div class="logo">
+          <span class="logo-icon">✈️</span>
+          <span class="logo-text">FlightWall</span>
+        </div>
+        <div class="header-stats">
+          <span class="stat-badge" id="flight-count">0</span>
+          <span class="stat-label">flights</span>
+        </div>
+      </div>
+      <div class="status-bar">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-text" id="status-text">Connecting...</span>
+        <span class="last-update" id="last-update">--</span>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Flights Section -->
+      <section class="flights-section">
+        <div class="flights-grid" id="flights-grid">
+          <!-- Flight cards will be inserted here -->
+          <div class="loading-state" id="loading-state">
+            <div class="radar-spinner"></div>
+            <p>Scanning airspace...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Empty State -->
+      <div class="empty-state" id="empty-state" style="display: none;">
+        <div class="empty-icon">📡</div>
+        <h3>No flights detected</h3>
+        <p>Monitoring airspace within search radius</p>
+      </div>
+    </main>
+
+    <!-- Footer / Controls -->
+    <footer class="footer">
+      <button class="btn btn-secondary" id="btn-refresh">
+        <span class="btn-icon">🔄</span>
+        Refresh
+      </button>
+      <button class="btn btn-primary" id="btn-test">
+        <span class="btn-icon">🔔</span>
+        Test Notification
+      </button>
+    </footer>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
