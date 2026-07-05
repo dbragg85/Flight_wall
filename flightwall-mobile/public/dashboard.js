@@ -21,6 +21,7 @@ let flights = [];
 let refreshCountdown = 30;
 let countdownInterval = null;
 let selectedFlight = null;
+let scheduleCache = {}; // Cache for schedule data to avoid repeated API calls
 
 // Airline logo mappings
 const AIRLINE_LOGOS = {
@@ -323,39 +324,99 @@ function updateFlightsList() {
 }
 
 // Select a flight and show Gantt chart
-function selectFlight(callsign) {
+async function selectFlight(callsign) {
   selectedFlight = flights.find(f => f.callsign === callsign);
   if (selectedFlight) {
     document.getElementById('selected-flight-badge').textContent = callsign;
     updateCurrentFlight();
     updateFlightsList();
-    updateGanttChart(selectedFlight);
+    
+    // Show loading state
+    const container = document.getElementById('gantt-container');
+    container.innerHTML = `
+      <div class="gantt-loading">
+        <div class="loading-spinner"></div>
+        <p>Loading schedule for ${callsign}...</p>
+      </div>
+    `;
+    
+    // Fetch real schedule data
+    const schedule = await fetchSchedule(selectedFlight);
+    updateGanttChart(selectedFlight, schedule);
   }
 }
 
-// Update Gantt chart for selected flight
-function updateGanttChart(flight) {
+// Fetch schedule data from API
+async function fetchSchedule(flight) {
+  const callsign = flight.callsign;
+  const registration = flight.registration;
+  
+  // Check cache first (cache for 5 minutes)
+  const cacheKey = callsign || registration;
+  const cached = scheduleCache[cacheKey];
+  if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
+    console.log(`Using cached schedule for ${cacheKey}`);
+    return cached.data;
+  }
+  
+  try {
+    const url = registration 
+      ? `/api/schedule/${callsign}?registration=${registration}`
+      : `/api/schedule/${callsign}`;
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.success && data.schedule) {
+      // Cache the result
+      scheduleCache[cacheKey] = {
+        data: data.schedule,
+        timestamp: Date.now(),
+      };
+      return data.schedule;
+    }
+  } catch (error) {
+    console.error('Failed to fetch schedule:', error);
+  }
+  
+  return [];
+}
+
+// Update Gantt chart for selected flight with real schedule data
+function updateGanttChart(flight, schedule = []) {
   const container = document.getElementById('gantt-container');
   const airline = getAirlineInfo(flight.callsign);
   const prefix = flight.callsign?.substring(0, 3).toLowerCase() || 'abx';
   
-  // Generate mock 24-hour schedule (in real app, this would come from AeroDataBox)
   const now = new Date();
   const currentHour = now.getUTCHours();
   
-  // Create hour headers in Zulu time (24-hour format)
+  // Calculate 48-hour window: 24 hours ago to 24 hours ahead
+  const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const windowEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const windowDurationMs = 48 * 60 * 60 * 1000;
+  
+  // Create hour headers for 48-hour window
   let hoursHtml = '';
-  for (let i = 0; i < 24; i++) {
-    const label = i.toString().padStart(2, '0') + 'Z';
-    const isCurrent = i === currentHour;
-    hoursHtml += `<div class="gantt-hour ${isCurrent ? 'current' : ''}">${label}</div>`;
+  for (let i = -24; i < 24; i++) {
+    const hourTime = new Date(now.getTime() + i * 60 * 60 * 1000);
+    const hourUTC = hourTime.getUTCHours();
+    const label = hourUTC.toString().padStart(2, '0') + 'Z';
+    const isCurrent = i === 0;
+    const isYesterday = i < 0;
+    hoursHtml += `<div class="gantt-hour ${isCurrent ? 'current' : ''} ${isYesterday ? 'past' : ''}">${label}</div>`;
   }
   
-  // Calculate now line position (UTC)
-  const nowPercent = ((currentHour + now.getUTCMinutes() / 60) / 24) * 100;
+  // Calculate now line position (at 50% since we show -24h to +24h)
+  const nowPercent = 50;
   
-  // Generate sample flight legs for the day
-  const sampleLegs = generateSampleSchedule(flight, prefix);
+  // Convert real schedule to Gantt bars
+  const legs = convertScheduleToLegs(schedule, windowStart, windowDurationMs);
+  
+  // Show message if no schedule data
+  const noDataMessage = schedule.length === 0 
+    ? '<div class="gantt-no-data">No schedule data available for this flight</div>'
+    : '';
   
   container.innerHTML = `
     <div class="gantt-header">
@@ -367,37 +428,104 @@ function updateGanttChart(flight) {
       <div class="gantt-row-label">${flight.callsign}</div>
       <div class="gantt-row-timeline">
         <div class="gantt-now-line" style="left: ${nowPercent}%"></div>
-        ${sampleLegs.map(leg => `
-          <div class="gantt-bar ${prefix}" 
+        ${legs.map(leg => `
+          <div class="gantt-bar ${prefix} ${leg.status}" 
                style="left: ${leg.startPercent}%; width: ${leg.widthPercent}%;"
-               title="${leg.route}">
+               title="${leg.tooltip}">
             ${leg.route}
           </div>
         `).join('')}
+        ${noDataMessage}
       </div>
     </div>
+    
+    ${schedule.length > 0 ? `
+    <div class="schedule-list">
+      <div class="schedule-list-header">Schedule Details (48-hour window)</div>
+      ${schedule.map(s => {
+        const depTime = s.departureActual || s.departureScheduled;
+        const arrTime = s.arrivalActual || s.arrivalScheduled;
+        const statusClass = getStatusClass(s.status);
+        return `
+          <div class="schedule-item ${statusClass}">
+            <span class="schedule-route">${s.origin || '---'} → ${s.destination || '---'}</span>
+            <span class="schedule-times">
+              ${formatZuluTime(depTime)} - ${formatZuluTime(arrTime)}
+            </span>
+            <span class="schedule-status">${s.status || 'Scheduled'}</span>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    ` : ''}
   `;
 }
 
-// Generate sample schedule data
-function generateSampleSchedule(flight, prefix) {
+// Convert schedule array to Gantt bar positions
+function convertScheduleToLegs(schedule, windowStart, windowDurationMs) {
   const legs = [];
-  const routes = [
-    { start: 2, end: 5, route: 'CVG→ATL' },
-    { start: 7, end: 10, route: 'ATL→CVG' },
-    { start: 12, end: 15, route: 'CVG→DFW' },
-    { start: 17, end: 20, route: 'DFW→CVG' },
-  ];
   
-  routes.forEach(r => {
+  schedule.forEach(flight => {
+    const depTime = flight.departureActual || flight.departureScheduled;
+    const arrTime = flight.arrivalActual || flight.arrivalScheduled;
+    
+    if (!depTime || !arrTime) return;
+    
+    const depDate = new Date(depTime);
+    const arrDate = new Date(arrTime);
+    
+    // Calculate position within the 48-hour window
+    const startOffset = depDate.getTime() - windowStart.getTime();
+    const endOffset = arrDate.getTime() - windowStart.getTime();
+    
+    // Skip if completely outside window
+    if (endOffset < 0 || startOffset > windowDurationMs) return;
+    
+    // Clamp to window boundaries
+    const clampedStart = Math.max(0, startOffset);
+    const clampedEnd = Math.min(windowDurationMs, endOffset);
+    
+    const startPercent = (clampedStart / windowDurationMs) * 100;
+    const widthPercent = Math.max(1, ((clampedEnd - clampedStart) / windowDurationMs) * 100);
+    
+    const route = `${flight.origin || '---'}→${flight.destination || '---'}`;
+    const tooltip = `${route}\nDep: ${formatZuluTime(depTime)}\nArr: ${formatZuluTime(arrTime)}\nStatus: ${flight.status || 'Scheduled'}`;
+    
     legs.push({
-      startPercent: (r.start / 24) * 100,
-      widthPercent: ((r.end - r.start) / 24) * 100,
-      route: r.route,
+      startPercent,
+      widthPercent,
+      route,
+      tooltip,
+      status: getStatusClass(flight.status),
     });
   });
   
   return legs;
+}
+
+// Get CSS class for flight status
+function getStatusClass(status) {
+  if (!status) return '';
+  const s = status.toLowerCase();
+  if (s.includes('landed') || s.includes('arrived')) return 'completed';
+  if (s.includes('enroute') || s.includes('airborne')) return 'active';
+  if (s.includes('departed')) return 'departed';
+  if (s.includes('cancelled')) return 'cancelled';
+  if (s.includes('delayed')) return 'delayed';
+  return '';
+}
+
+// Format time to Zulu format
+function formatZuluTime(isoString) {
+  if (!isoString) return '--:--Z';
+  try {
+    const date = new Date(isoString);
+    const hours = date.getUTCHours().toString().padStart(2, '0');
+    const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}Z`;
+  } catch {
+    return '--:--Z';
+  }
 }
 
 // Update map markers

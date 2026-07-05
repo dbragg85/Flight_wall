@@ -13,7 +13,7 @@ const os = require('os');
 const { fetchFlights } = require('./utils/flightApi');
 const { processFlights, loadActiveFlights, getRecentEvents } = require('./utils/flightLogic');
 const { sendNotification, sendTestNotification, sendBatchNotifications } = require('./utils/notifier');
-const { enrichFlightWithRoute } = require('./utils/routeLookup');
+const { enrichFlightWithRoute, lookupFlightSchedule, lookupAirportSchedule } = require('./utils/routeLookup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -148,6 +148,78 @@ app.get('/', (req, res) => {
  */
 app.get('/radar', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+/**
+ * GET /api/schedule/:callsign
+ * Returns 48-hour flight schedule (24h past + 24h future) for a callsign or registration
+ */
+app.get('/api/schedule/:callsign', async (req, res) => {
+  try {
+    const { callsign } = req.params;
+    const { registration } = req.query;
+    
+    if (!callsign) {
+      return res.status(400).json({ success: false, error: 'Callsign required' });
+    }
+    
+    console.log(`📅 Schedule request for ${callsign}${registration ? ` (reg: ${registration})` : ''}`);
+    
+    const schedule = await lookupFlightSchedule(callsign, registration);
+    
+    res.json({
+      success: true,
+      callsign,
+      registration: registration || null,
+      schedule,
+      count: schedule.length,
+      dateRange: {
+        from: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      },
+    });
+    
+  } catch (error) {
+    console.error('Error fetching schedule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/airport/:code/schedule
+ * Returns airport departures and arrivals
+ */
+app.get('/api/airport/:code/schedule', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { direction = 'both' } = req.query;
+    
+    let departures = [];
+    let arrivals = [];
+    
+    if (direction === 'both' || direction === 'departure') {
+      departures = await lookupAirportSchedule(code, 'departure');
+    }
+    
+    if (direction === 'both' || direction === 'arrival') {
+      arrivals = await lookupAirportSchedule(code, 'arrival');
+    }
+    
+    res.json({
+      success: true,
+      airport: code,
+      departures,
+      arrivals,
+      counts: {
+        departures: departures.length,
+        arrivals: arrivals.length,
+      },
+    });
+    
+  } catch (error) {
+    console.error('Error fetching airport schedule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // ============================================

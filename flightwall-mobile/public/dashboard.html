@@ -468,6 +468,117 @@
       opacity: 0.5;
     }
 
+    /* Gantt loading state */
+    .gantt-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100px;
+      color: var(--text-secondary);
+    }
+
+    .loading-spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--accent-blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 10px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Gantt status colors */
+    .gantt-bar.completed { opacity: 0.6; }
+    .gantt-bar.active { box-shadow: 0 0 8px var(--accent-green); }
+    .gantt-bar.departed { box-shadow: 0 0 6px var(--accent-blue); }
+    .gantt-bar.cancelled { 
+      background: linear-gradient(90deg, #666, #888) !important; 
+      text-decoration: line-through;
+    }
+    .gantt-bar.delayed { 
+      background: linear-gradient(90deg, var(--accent-red), #ff6677) !important;
+    }
+
+    .gantt-hour.past {
+      opacity: 0.5;
+    }
+
+    .gantt-no-data {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    /* Schedule list below Gantt */
+    .schedule-list {
+      margin-top: 16px;
+      border-top: 1px solid var(--border-color);
+      padding-top: 12px;
+    }
+
+    .schedule-list-header {
+      font-size: 10px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .schedule-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+
+    .schedule-item.completed { opacity: 0.6; }
+    .schedule-item.active { border-left: 3px solid var(--accent-green); }
+    .schedule-item.departed { border-left: 3px solid var(--accent-blue); }
+    .schedule-item.cancelled { 
+      opacity: 0.5; 
+      text-decoration: line-through;
+    }
+    .schedule-item.delayed { border-left: 3px solid var(--accent-red); }
+
+    .schedule-route {
+      font-weight: 600;
+      color: var(--accent-blue);
+    }
+
+    .schedule-times {
+      color: var(--text-secondary);
+    }
+
+    .schedule-status {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--bg-card);
+      color: var(--text-muted);
+    }
+
+    .schedule-item.active .schedule-status {
+      background: rgba(0, 255, 136, 0.2);
+      color: var(--accent-green);
+    }
+
+    .schedule-item.delayed .schedule-status {
+      background: rgba(255, 68, 102, 0.2);
+      color: var(--accent-red);
+    }
+
     /* Home marker */
     .home-marker {
       width: 16px;
@@ -601,13 +712,14 @@
     <!-- Gantt Chart - Bottom Right -->
     <section class="card gantt-section">
       <div class="card-header">
-        24-Hour Schedule
+        48-Hour Schedule (-24h to +24h)
         <span class="badge" id="selected-flight-badge">Select a flight</span>
       </div>
       <div class="gantt-container" id="gantt-container">
         <div class="no-schedule">
           <div class="no-schedule-icon">📅</div>
-          <p>Click a flight to view its 24-hour schedule</p>
+          <p>Click a flight to view its 48-hour schedule</p>
+          <p style="font-size: 10px; margin-top: 4px; opacity: 0.7;">Real-time data from AeroDataBox API</p>
         </div>
       </div>
     </section>
