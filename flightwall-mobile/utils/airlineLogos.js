@@ -15,6 +15,22 @@ const AIRLINE_DOMAINS = {
   'B6': 'jetblue.com',
   'AS': 'alaskaair.com',
   
+  // US Regional Airlines (Delta Connection, American Eagle, United Express, etc.)
+  '9E': 'delta.com',     // Endeavor Air (Delta Connection)
+  'OH': 'delta.com',     // PSA Airlines (American Eagle) - uses AA branding
+  'YX': 'aa.com',        // Republic Airways (flies for multiple)
+  'CP': 'delta.com',     // Compass Airlines
+  'G7': 'delta.com',     // GoJet Airlines
+  'ZW': 'united.com',    // Air Wisconsin (United Express)
+  'C5': 'united.com',    // CommutAir (United Express)
+  'AX': 'aa.com',        // Trans States Airlines
+  'MQ': 'aa.com',        // Envoy Air (American Eagle)
+  'OO': 'skywest.com',   // SkyWest Airlines
+  'YV': 'united.com',    // Mesa Airlines
+  'QX': 'alaskaair.com', // Horizon Air
+  'EV': 'united.com',    // ExpressJet
+  'PT': 'piedmont-airlines.com', // Piedmont Airlines (American Eagle)
+  
   // International Airlines
   'AF': 'airfrance.com',
   'BA': 'britishairways.com',
@@ -49,10 +65,18 @@ const AIRLINE_DOMAINS = {
   // Amazon Air (various operators)
   'ER': 'amazon.com',    // Amazon Prime Air / Aer Lingus Regional
   'SWQ': 'amazon.com',   // Swift Air (Amazon contractor)
+  
+  // Private/Charter/Other
+  'EJA': 'netjets.com',  // NetJets
+  'XOJ': 'xojet.com',    // XO Jet
+  'LXJ': 'flexjet.com',  // Flexjet
+  'TVS': 'tvsair.com',   // TVS Air
+  'JIA': 'psa-airlines.com', // PSA Airlines (American Eagle)
 };
 
 // ICAO to IATA mapping for common airlines
 const ICAO_TO_IATA = {
+  // Major US Airlines
   'DAL': 'DL',
   'AAL': 'AA',
   'UAL': 'UA',
@@ -61,6 +85,25 @@ const ICAO_TO_IATA = {
   'NKS': 'NK',
   'JBU': 'B6',
   'ASA': 'AS',
+  
+  // US Regional Airlines
+  'EDV': '9E',   // Endeavor Air (Delta Connection)
+  'JIA': 'JIA',  // PSA Airlines (American Eagle) - keep as JIA for direct lookup
+  'RPA': 'YX',   // Republic Airways
+  'CPZ': 'CP',   // Compass Airlines
+  'GJS': 'G7',   // GoJet Airlines
+  'AWI': 'ZW',   // Air Wisconsin
+  'UCA': 'C5',   // CommutAir
+  'LOF': 'AX',   // Trans States
+  'ENY': 'MQ',   // Envoy Air
+  'SKW': 'OO',   // SkyWest
+  'ASH': 'YV',   // Mesa Airlines
+  'QXE': 'QX',   // Horizon Air
+  'ASQ': 'EV',   // ExpressJet
+  'PDT': 'PT',   // Piedmont Airlines
+  'EJA': 'EJA',  // NetJets - keep as EJA for direct lookup
+  
+  // International Airlines
   'AFR': 'AF',
   'BAW': 'BA',
   'DLH': 'LH',
@@ -79,6 +122,8 @@ const ICAO_TO_IATA = {
   'ACA': 'AC',
   'QFA': 'QF',
   'VIR': 'VS',
+  
+  // Cargo Airlines
   'UPS': '5X',
   'FDX': 'FX',
   'CKS': 'K4',
@@ -100,6 +145,32 @@ const AMAZON_PATTERNS = [
   /^SWQ/i,      // Swift Air (Amazon contractor)
 ];
 
+// Direct ICAO code to domain mapping (for regional carriers that use ICAO in callsigns)
+const ICAO_DOMAINS = {
+  'EDV': 'delta.com',      // Endeavor Air (Delta Connection)
+  'JIA': 'aa.com',         // PSA Airlines (American Eagle)
+  'EJA': 'netjets.com',    // NetJets
+  'RPA': 'republicairways.com', // Republic Airways
+  'ENY': 'aa.com',         // Envoy Air (American Eagle)
+  'SKW': 'skywest.com',    // SkyWest
+  'ASH': 'united.com',     // Mesa Airlines (United Express)
+  'GJS': 'delta.com',      // GoJet (Delta Connection)
+  'CPZ': 'delta.com',      // Compass Airlines
+  'AWI': 'united.com',     // Air Wisconsin
+  'UCA': 'united.com',     // CommutAir
+  'QXE': 'alaskaair.com',  // Horizon Air
+  'PDT': 'aa.com',         // Piedmont Airlines
+  'DAL': 'delta.com',
+  'AAL': 'aa.com',
+  'UAL': 'united.com',
+  'SWA': 'southwest.com',
+  'UPS': 'ups.com',
+  'FDX': 'fedex.com',
+  'GTI': 'atlasair.com',
+  'ABX': 'amazon.com',     // ABX Air (Amazon contractor)
+  'ATN': 'amazon.com',     // Air Transport Intl (Amazon)
+};
+
 /**
  * Get airline logo URL from Clearbit
  * @param {Object} params - Airline identifiers
@@ -109,25 +180,43 @@ const AMAZON_PATTERNS = [
  * @returns {string|null} Logo URL or null if not found
  */
 function getAirlineLogo({ airlineIata, airlineIcao, callsign }) {
+  // Check for Amazon-related flights first
+  if (callsign && isAmazonFlight(callsign)) {
+    return 'https://logo.clearbit.com/amazon.com';
+  }
+  
+  // Try to get domain from ICAO code directly (from callsign prefix)
+  if (callsign) {
+    const icaoPrefix = callsign.substring(0, 3).toUpperCase();
+    const icaoDomain = ICAO_DOMAINS[icaoPrefix];
+    if (icaoDomain) {
+      return `https://logo.clearbit.com/${icaoDomain}`;
+    }
+  }
+  
+  // Try ICAO code if provided
+  if (airlineIcao) {
+    const icaoDomain = ICAO_DOMAINS[airlineIcao.toUpperCase()];
+    if (icaoDomain) {
+      return `https://logo.clearbit.com/${icaoDomain}`;
+    }
+  }
+  
+  // Try IATA code
   let iataCode = airlineIata;
   
-  // Try to get IATA from ICAO if not provided
+  // Convert ICAO to IATA if needed
   if (!iataCode && airlineIcao) {
     iataCode = ICAO_TO_IATA[airlineIcao.toUpperCase()];
   }
   
-  // Try to extract airline code from callsign
+  // Try from callsign
   if (!iataCode && callsign) {
     const icaoPrefix = callsign.substring(0, 3).toUpperCase();
     iataCode = ICAO_TO_IATA[icaoPrefix];
   }
   
-  // Check for Amazon-related flights
-  if (callsign && isAmazonFlight(callsign)) {
-    return 'https://logo.clearbit.com/amazon.com';
-  }
-  
-  // Look up domain and return Clearbit logo URL
+  // Look up domain by IATA
   if (iataCode) {
     const domain = AIRLINE_DOMAINS[iataCode.toUpperCase()];
     if (domain) {
@@ -145,6 +234,7 @@ function getAirlineLogo({ airlineIata, airlineIcao, callsign }) {
  */
 function getAirlineName(code) {
   const AIRLINE_NAMES = {
+    // Major US Airlines
     'DL': 'Delta Air Lines',
     'AA': 'American Airlines',
     'UA': 'United Airlines',
@@ -153,11 +243,36 @@ function getAirlineName(code) {
     'NK': 'Spirit Airlines',
     'B6': 'JetBlue Airways',
     'AS': 'Alaska Airlines',
+    
+    // US Regional Airlines (IATA codes)
+    '9E': 'Endeavor Air',
+    'OH': 'PSA Airlines',
+    'YX': 'Republic Airways',
+    'MQ': 'Envoy Air',
+    'OO': 'SkyWest Airlines',
+    'YV': 'Mesa Airlines',
+    'QX': 'Horizon Air',
+    
+    // US Regional Airlines (ICAO codes used as callsigns)
+    'EDV': 'Endeavor Air',
+    'JIA': 'PSA Airlines',
+    'EJA': 'NetJets',
+    'RPA': 'Republic Airways',
+    'ENY': 'Envoy Air',
+    'SKW': 'SkyWest Airlines',
+    'ASH': 'Mesa Airlines',
+    
+    // International Airlines
     'AF': 'Air France',
     'BA': 'British Airways',
     'LH': 'Lufthansa',
     'EK': 'Emirates',
     'QR': 'Qatar Airways',
+    'SQ': 'Singapore Airlines',
+    'AC': 'Air Canada',
+    'KL': 'KLM',
+    
+    // Cargo Airlines
     '5X': 'UPS Airlines',
     'FX': 'FedEx Express',
     'K4': 'Kalitta Air',
@@ -165,20 +280,34 @@ function getAirlineName(code) {
     'CV': 'Cargolux',
     'QY': 'DHL Aviation',
     'M3': 'ABX Air',
-    '8C': 'Air Transport International',
+    '8C': 'Air Transport Intl',
     '5Y': 'Atlas Air',
+    'UPS': 'UPS Airlines',
+    'FDX': 'FedEx Express',
+    'GTI': 'Atlas Air',
+    'ABX': 'ABX Air',
+    'ATN': 'Air Transport Intl',
   };
   
   if (!code) return null;
   
-  // Try IATA first
-  let name = AIRLINE_NAMES[code.toUpperCase()];
+  const upperCode = code.toUpperCase().trim();
+  
+  // Try direct lookup first (works for both IATA and ICAO)
+  let name = AIRLINE_NAMES[upperCode];
   if (name) return name;
   
   // Try ICAO to IATA conversion
-  const iata = ICAO_TO_IATA[code.toUpperCase()];
+  const iata = ICAO_TO_IATA[upperCode];
   if (iata) {
     name = AIRLINE_NAMES[iata];
+    if (name) return name;
+  }
+  
+  // Try extracting from callsign (first 3 chars)
+  if (upperCode.length >= 3) {
+    const prefix = upperCode.substring(0, 3);
+    name = AIRLINE_NAMES[prefix];
     if (name) return name;
   }
   
@@ -216,5 +345,6 @@ module.exports = {
   isAmazonFlight,
   getFallbackEmoji,
   ICAO_TO_IATA,
+  ICAO_DOMAINS,
   AIRLINE_DOMAINS,
 };
