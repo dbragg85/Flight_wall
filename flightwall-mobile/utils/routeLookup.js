@@ -174,17 +174,18 @@ async function enrichFlightWithRoute(flight) {
     }
   }
   
-  // Look up aircraft details
-  const reg = enrichedFlight.registration || flight.registration;
-  if (reg) {
-    const aircraftInfo = await lookupAircraft(reg);
-    if (aircraftInfo) {
-      enrichedFlight.seats = aircraftInfo.seats;
-      enrichedFlight.aircraftAge = aircraftInfo.ageYears;
-      enrichedFlight.aircraftModel = aircraftInfo.modelCode || aircraftInfo.model;
-      enrichedFlight.isFreighter = aircraftInfo.isFreighter;
-    }
-  }
+  // Aircraft lookup disabled for faster/more reliable polling
+  // To re-enable: uncomment below
+  // const reg = enrichedFlight.registration || flight.registration;
+  // if (reg) {
+  //   const aircraftInfo = await lookupAircraft(reg);
+  //   if (aircraftInfo) {
+  //     enrichedFlight.seats = aircraftInfo.seats;
+  //     enrichedFlight.aircraftAge = aircraftInfo.ageYears;
+  //     enrichedFlight.aircraftModel = aircraftInfo.modelCode || aircraftInfo.model;
+  //     enrichedFlight.isFreighter = aircraftInfo.isFreighter;
+  //   }
+  // }
   
   // Weather lookup disabled for faster processing
   // To re-enable: uncomment below
