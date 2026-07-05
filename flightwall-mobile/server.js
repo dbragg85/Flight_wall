@@ -136,10 +136,18 @@ app.post('/api/trigger-poll', async (req, res) => {
 
 /**
  * GET /
- * Serve the dashboard
+ * Serve the simple mobile dashboard
  */
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+/**
+ * GET /radar
+ * Serve the visual radar dashboard
+ */
+app.get('/radar', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
 // ============================================
