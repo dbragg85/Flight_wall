@@ -136,13 +136,11 @@ const ICAO_TO_IATA = {
 };
 
 // Amazon-related callsign patterns
+// Note: ABX, GTI, ATN operate for MULTIPLE customers (Amazon, DHL, etc.)
+// Only flag flights with explicit Amazon callsigns
 const AMAZON_PATTERNS = [
-  /^AZA/i,      // Amazon callsigns
-  /^AMAZON/i,
-  /^GTI/i,      // Atlas Air (Amazon contractor)
-  /^ABX/i,      // ABX Air (Amazon contractor)
-  /^ATN/i,      // Air Transport International (Amazon)
-  /^SWQ/i,      // Swift Air (Amazon contractor)
+  /^AZA/i,      // Amazon Prime Air callsigns
+  /^AMAZON/i,   // Explicit Amazon callsigns
 ];
 
 // Direct ICAO code to domain mapping (for regional carriers that use ICAO in callsigns)
@@ -167,8 +165,8 @@ const ICAO_DOMAINS = {
   'UPS': 'ups.com',
   'FDX': 'fedex.com',
   'GTI': 'atlasair.com',
-  'ABX': 'amazon.com',     // ABX Air (Amazon contractor)
-  'ATN': 'amazon.com',     // Air Transport Intl (Amazon)
+  'ABX': 'abxair.com',     // ABX Air (operates for Amazon, DHL, others)
+  'ATN': 'atiairlines.com', // Air Transport Intl (operates for Amazon, DHL, others)
 };
 
 /**
