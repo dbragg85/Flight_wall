@@ -148,12 +148,27 @@ app.get('/', (req, res) => {
 
 /**
  * Main polling function - fetches flights and sends notifications
+ * Has a 60-second timeout to prevent blocking the scheduler
  */
 async function pollFlights() {
   console.log('\n' + '='.repeat(50));
   console.log(`⏰ Polling at ${new Date().toLocaleTimeString()}`);
   console.log('='.repeat(50));
   
+  // Wrap in timeout to prevent blocking
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Poll timeout after 60s')), 60000)
+  );
+  
+  try {
+    return await Promise.race([pollFlightsInternal(), timeoutPromise]);
+  } catch (error) {
+    console.error(`❌ Poll error: ${error.message}`);
+    return { error: error.message };
+  }
+}
+
+async function pollFlightsInternal() {
   try {
     // Fetch current flights from API
     const flights = await fetchFlights();
@@ -171,10 +186,17 @@ async function pollFlights() {
     if (events.length > 0) {
       console.log(`\n🔔 Sending ${events.length} notification(s)...`);
       
-      // Enrich flights with route data SEQUENTIALLY to avoid rate limits
+      // Enrich flights with route data - limit to first 5 to prevent timeouts
       const enrichedNotifications = [];
-      for (const e of events) {
-        const enrichedFlight = await enrichFlightWithRoute(e.flight);
+      const maxEnrich = Math.min(events.length, 5);
+      
+      for (let i = 0; i < events.length; i++) {
+        const e = events[i];
+        // Only enrich first 5 flights, send others without enrichment
+        const enrichedFlight = i < maxEnrich 
+          ? await enrichFlightWithRoute(e.flight)
+          : e.flight;
+        
         enrichedNotifications.push({
           flight: enrichedFlight,
           event: e.event,
@@ -182,9 +204,10 @@ async function pollFlights() {
             dashboardUrl: getDashboardUrl(),
           },
         });
+        
         // Small delay between enrichments to avoid API rate limits
-        if (events.length > 1) {
-          await new Promise(resolve => setTimeout(resolve, 300));
+        if (i < maxEnrich - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200));
         }
       }
       
@@ -203,10 +226,12 @@ async function pollFlights() {
     };
     
   } catch (error) {
-    console.error('❌ Poll error:', error.message);
+    console.error('❌ Poll internal error:', error.message);
     return { error: error.message };
   }
 }
+
+// End of pollFlightsInternal
 
 /**
  * Get dashboard URL for notification click actions
