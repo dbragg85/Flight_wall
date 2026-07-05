@@ -61,20 +61,24 @@ function estimateMinutesAway(distanceNm, groundSpeedKt) {
 /**
  * Normalize flight data from various API response formats
  * Different RapidAPI providers return different structures
+ * Optimized for ADS-B Exchange format
  * @param {Object} rawFlight - Raw flight data from API
  * @param {number} homeLat - Home latitude
  * @param {number} homeLon - Home longitude
  * @returns {Object} Normalized flight object
  */
 function normalizeFlight(rawFlight, homeLat, homeLon) {
-  // Extract data defensively - different APIs use different field names
+  // Extract data defensively - ADS-B Exchange uses these field names:
+  // hex, flight, r (registration), t (aircraft type), alt_baro, alt_geom, 
+  // gs (ground speed), track, lat, lon, squawk, category, etc.
   const flight = {
-    // Try various field names for each property
-    id: rawFlight.id || rawFlight.flight_id || rawFlight.hex || rawFlight.icao24 || 
+    // ID - prefer hex code (ICAO) for ADS-B Exchange
+    id: rawFlight.hex || rawFlight.id || rawFlight.flight_id || rawFlight.icao24 || 
         rawFlight.registration || generateFlightId(rawFlight),
     
+    // Callsign - ADS-B Exchange uses 'flight'
     callsign: cleanString(
-      rawFlight.callsign || rawFlight.flight || rawFlight.call_sign || 
+      rawFlight.flight || rawFlight.callsign || rawFlight.call_sign || 
       rawFlight.flightNumber || rawFlight.flight_number || ''
     ),
     
@@ -90,36 +94,40 @@ function normalizeFlight(rawFlight, homeLat, homeLon) {
     flightNumber: rawFlight.flight_number || rawFlight.flightNumber || 
                   rawFlight.flight_iata || rawFlight.flight || null,
     
+    // Route info - ADS-B Exchange may not have this
     origin: rawFlight.origin || rawFlight.dep_iata || rawFlight.departure || 
             rawFlight.from || rawFlight.origin_airport_iata || null,
     
     destination: rawFlight.destination || rawFlight.arr_iata || rawFlight.arrival || 
                  rawFlight.to || rawFlight.destination_airport_iata || null,
     
-    aircraftType: rawFlight.aircraft_type || rawFlight.aircraftType || 
-                  rawFlight.type || rawFlight.model || rawFlight.aircraft?.model || null,
+    // Aircraft type - ADS-B Exchange uses 't'
+    aircraftType: rawFlight.t || rawFlight.aircraft_type || rawFlight.aircraftType || 
+                  rawFlight.type || rawFlight.model || rawFlight.desc || null,
     
-    registration: rawFlight.registration || rawFlight.reg || rawFlight.tail_number || 
-                  rawFlight.aircraft?.registration || null,
+    // Registration - ADS-B Exchange uses 'r'
+    registration: rawFlight.r || rawFlight.registration || rawFlight.reg || 
+                  rawFlight.tail_number || null,
     
-    latitude: parseFloat(
-      rawFlight.latitude || rawFlight.lat || rawFlight.geography?.latitude || 
-      rawFlight.position?.latitude || 0
-    ),
+    latitude: parseFloat(rawFlight.lat || rawFlight.latitude || 0),
     
-    longitude: parseFloat(
-      rawFlight.longitude || rawFlight.lon || rawFlight.lng || 
-      rawFlight.geography?.longitude || rawFlight.position?.longitude || 0
-    ),
+    longitude: parseFloat(rawFlight.lon || rawFlight.longitude || rawFlight.lng || 0),
     
     altitudeFt: parseAltitude(rawFlight),
     
     groundSpeedKt: parseSpeed(rawFlight),
     
+    // Heading - ADS-B Exchange uses 'track'
     heading: parseFloat(
-      rawFlight.heading || rawFlight.direction || rawFlight.track || 
+      rawFlight.track || rawFlight.heading || rawFlight.direction || 
       rawFlight.true_track || rawFlight.dir || 0
     ),
+    
+    // Squawk code (useful for identifying special flights)
+    squawk: rawFlight.squawk || null,
+    
+    // ICAO hex code
+    icaoHex: rawFlight.hex || null,
     
     lastSeen: new Date().toISOString(),
   };
@@ -191,43 +199,47 @@ function cleanString(str) {
 
 /**
  * Parse altitude from various formats
+ * ADS-B Exchange uses alt_baro (barometric) and alt_geom (geometric)
  */
 function parseAltitude(rawFlight) {
-  // Try different field names
-  let alt = rawFlight.altitude || rawFlight.alt || rawFlight.baro_altitude ||
-            rawFlight.geo_altitude || rawFlight.alt_baro || rawFlight.altitude_ft ||
-            rawFlight.geography?.altitude || rawFlight.position?.altitude;
+  // ADS-B Exchange: prefer alt_baro, fallback to alt_geom
+  // Note: ADS-B Exchange returns altitude in feet already
+  let alt = rawFlight.alt_baro || rawFlight.alt_geom || 
+            rawFlight.altitude || rawFlight.alt || rawFlight.baro_altitude ||
+            rawFlight.geo_altitude || rawFlight.altitude_ft;
   
   if (alt === null || alt === undefined) return null;
   
+  // ADS-B Exchange may return "ground" for aircraft on ground
+  if (alt === 'ground') return 0;
+  
   alt = parseFloat(alt);
   
-  // Some APIs return altitude in meters, convert if it seems like meters
-  // (typical cruising altitude in meters would be ~10000, in feet ~35000)
-  if (alt > 0 && alt < 15000 && rawFlight.altitude_unit !== 'ft') {
-    // Likely meters, convert to feet
-    alt = Math.round(alt * 3.28084);
-  }
+  if (isNaN(alt)) return null;
+  
+  // ADS-B Exchange returns feet, no conversion needed
+  // Only convert if it looks like meters (very low value for cruising)
+  // Skip conversion for ADS-B Exchange data
   
   return Math.round(alt);
 }
 
 /**
  * Parse speed from various formats
+ * ADS-B Exchange uses 'gs' for ground speed in knots
  */
 function parseSpeed(rawFlight) {
-  let speed = rawFlight.ground_speed || rawFlight.groundSpeed || rawFlight.speed ||
-              rawFlight.velocity || rawFlight.gs || rawFlight.speed_horizontal;
+  // ADS-B Exchange: gs is ground speed in knots
+  let speed = rawFlight.gs || rawFlight.ground_speed || rawFlight.groundSpeed || 
+              rawFlight.speed || rawFlight.velocity || rawFlight.speed_horizontal;
   
   if (speed === null || speed === undefined) return null;
   
   speed = parseFloat(speed);
   
-  // Some APIs return speed in m/s, convert if it seems like m/s
-  if (speed > 0 && speed < 350) {
-    // Likely m/s, convert to knots
-    speed = Math.round(speed * 1.94384);
-  }
+  if (isNaN(speed)) return null;
+  
+  // ADS-B Exchange returns knots, no conversion needed
   
   return Math.round(speed);
 }
@@ -260,27 +272,9 @@ async function fetchFlights() {
   const maxAlt = parseFloat(MAX_ALTITUDE_FT) || 45000;
   
   try {
-    // Build request URL - different APIs have different parameter formats
-    // Adjust this based on your specific RapidAPI endpoint
+    // ADS-B Exchange URL already contains lat/lon/dist in the path
+    // No need to add query params for this API
     let url = RAPIDAPI_URL;
-    
-    // Common parameter patterns for flight APIs
-    const params = {
-      lat: homeLat,
-      lon: homeLon,
-      // Some APIs use these
-      latitude: homeLat,
-      longitude: homeLon,
-      // Radius parameters
-      radius: searchRadius,
-      distance: searchRadius,
-      // Bounding box alternative (some APIs prefer this)
-      // Calculate rough bounding box (1 degree ≈ 60 nm)
-      lat_min: homeLat - (searchRadius / 60),
-      lat_max: homeLat + (searchRadius / 60),
-      lon_min: homeLon - (searchRadius / 60),
-      lon_max: homeLon + (searchRadius / 60),
-    };
     
     console.log(`📡 Fetching flights within ${searchRadius} NM of (${homeLat}, ${homeLon})...`);
     
@@ -288,8 +282,8 @@ async function fetchFlights() {
       headers: {
         'x-rapidapi-key': RAPIDAPI_KEY,
         'x-rapidapi-host': RAPIDAPI_HOST,
+        'Content-Type': 'application/json',
       },
-      params,
       timeout: 30000,
     });
     
