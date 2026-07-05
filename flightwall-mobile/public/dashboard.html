@@ -136,10 +136,10 @@
       cursor: default;
     }
 
-    /* Main Layout - 2x2 Grid */
+    /* Main Layout - 2x2 Grid with gateway panel */
     .main-container {
       display: grid;
-      grid-template-columns: 320px 1fr;
+      grid-template-columns: 280px 1fr 200px;
       grid-template-rows: 1fr 1fr;
       gap: 12px;
       padding: 12px;
@@ -356,10 +356,114 @@
       color: var(--accent-green);
     }
 
-    /* Radar Map - Top Right */
+    /* Radar Map - Top Center */
     .radar-section {
       grid-row: 1;
       grid-column: 2;
+    }
+
+    /* Gateway Selector - Top Right */
+    .gateway-section {
+      grid-row: 1;
+      grid-column: 3;
+    }
+
+    .gateway-categories {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .gateway-category {
+      margin-bottom: 8px;
+    }
+
+    .category-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--bg-secondary);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-blue);
+    }
+
+    .category-header:hover {
+      background: var(--bg-card-hover);
+    }
+
+    .category-header.active {
+      background: var(--accent-blue);
+      color: white;
+    }
+
+    .category-header .count {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: rgba(0, 170, 255, 0.2);
+      border-radius: 8px;
+      color: var(--accent-blue);
+    }
+
+    .category-header.active .count {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+    }
+
+    .category-toggle {
+      font-size: 10px;
+      transition: transform 0.2s;
+    }
+
+    .category-header.expanded .category-toggle {
+      transform: rotate(180deg);
+    }
+
+    .gateway-list {
+      display: none;
+      padding: 4px 0 4px 8px;
+    }
+
+    .gateway-list.expanded {
+      display: block;
+    }
+
+    .gateway-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.2s;
+      border-left: 2px solid transparent;
+    }
+
+    .gateway-item:hover {
+      background: var(--bg-card-hover);
+    }
+
+    .gateway-item.selected {
+      background: rgba(0, 255, 136, 0.1);
+      border-left-color: var(--accent-green);
+    }
+
+    .gateway-item .icao {
+      font-weight: 600;
+      color: var(--accent-green);
+      width: 45px;
+    }
+
+    .gateway-item .name {
+      color: var(--text-secondary);
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     #radar-map {
@@ -399,10 +503,10 @@
       color: var(--text-secondary);
     }
 
-    /* Gantt Chart - Bottom Right */
+    /* Gantt Chart - Bottom spanning center and right */
     .gantt-section {
       grid-row: 2;
-      grid-column: 2;
+      grid-column: 2 / 4;
     }
 
     .gantt-container {
@@ -626,14 +730,22 @@
       color: var(--accent-red);
     }
 
-    /* Home marker */
-    .home-marker {
-      width: 16px;
-      height: 16px;
+    /* Gateway marker */
+    .gateway-marker-container {
+      background: transparent;
+    }
+
+    .gateway-marker {
       background: var(--accent-orange);
-      border: 2px solid white;
-      border-radius: 50%;
-      box-shadow: 0 0 15px var(--accent-orange);
+      color: white;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 3px 6px;
+      border-radius: 3px;
+      border: 1px solid white;
+      box-shadow: 0 0 10px var(--accent-orange);
+      white-space: nowrap;
+      text-align: center;
     }
 
     /* No flight state */
@@ -673,7 +785,7 @@
       <span class="logo-icon">✈️</span>
       <div class="logo-text">
         <h1>FLIGHT WALL</h1>
-        <span class="subtitle">East Price Hill • 10 NM</span>
+        <span class="subtitle">Gateway Network Monitor</span>
       </div>
     </div>
     
@@ -715,21 +827,21 @@
       </div>
     </section>
 
-    <!-- Live Radar Map - Top Right -->
+    <!-- Live Radar Map - Top Center -->
     <section class="card radar-section">
       <div class="card-header">
         Live Radar
-        <span class="badge">10 NM</span>
+        <span class="badge" id="radar-gateway-badge">KCVG</span>
       </div>
       <div id="radar-map"></div>
       <div class="radar-legend">
         <div class="legend-item">
           <div class="legend-dot" style="background: #00ff88;"></div>
-          <span>0-5K ft</span>
+          <span>5 NM</span>
         </div>
         <div class="legend-item">
           <div class="legend-dot" style="background: #00aaff;"></div>
-          <span>5-10K ft</span>
+          <span>10 NM</span>
         </div>
         <div class="legend-item">
           <div class="legend-dot" style="background: #ffaa00;"></div>
@@ -757,6 +869,17 @@
           <div class="no-flight-icon">📋</div>
           <p>No filtered carriers nearby</p>
         </div>
+      </div>
+    </section>
+
+    <!-- Gateway Selector - Top Right -->
+    <section class="card gateway-section">
+      <div class="card-header">
+        Gateways
+        <span class="badge" id="gateway-count">47</span>
+      </div>
+      <div class="gateway-categories" id="gateway-categories">
+        <!-- Categories populated by JS -->
       </div>
     </section>
 
