@@ -82,19 +82,23 @@ function formatMessage(flight, event) {
   }
   
   // Flight time and distance remaining
+  // Only show "in air" if actually airborne (altitude > 500 ft)
+  const isAirborne = flight.altitudeFt && flight.altitudeFt > 500;
   const timeParts = [];
-  if (flight.flightTimeElapsed) {
+  if (flight.flightTimeElapsed && isAirborne) {
     timeParts.push(`${flight.flightTimeElapsed} in air`);
   }
-  if (flight.distanceRemaining) {
+  if (flight.distanceRemaining && isAirborne) {
     timeParts.push(`${flight.distanceRemaining} NM to go`);
   }
   if (timeParts.length > 0) {
     lines.push(`⏱️ ${timeParts.join(' • ')}`);
   }
   
-  // ETA
-  if (flight.estimatedMinutesAway) {
+  // Ground status or ETA
+  if (!isAirborne && flight.altitudeFt !== null && flight.altitudeFt <= 500) {
+    lines.push(`🛬 On ground (taxiing/departing)`);
+  } else if (flight.estimatedMinutesAway) {
     lines.push(`🎯 Arriving in ~${flight.estimatedMinutesAway} min`);
   }
   
