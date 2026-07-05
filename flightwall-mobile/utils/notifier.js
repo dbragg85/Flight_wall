@@ -32,19 +32,41 @@ function formatMessage(flight, event) {
   const emoji = getFallbackEmoji(flight.callsign);
   const lines = [];
   
-  // Flight identifier
-  lines.push(`${emoji} ${flight.callsign || 'Unknown'}`);
+  // Airline name (prominent)
+  if (flight.airlineName) {
+    lines.push(`🏢 ${flight.airlineName}`);
+  }
+  
+  // Flight identifier and number
+  const flightId = flight.flightNumber || flight.callsign || 'Unknown';
+  lines.push(`${emoji} ${flightId}`);
   
   // Route (if available)
   if (flight.origin || flight.destination) {
-    const route = [flight.origin || '???', flight.destination || '???'].join(' → ');
-    lines.push(route);
+    lines.push(`🛫 ${flight.origin || '???'} → ${flight.destination || '???'}`);
+    if (flight.originName || flight.destinationName) {
+      const originDisplay = flight.originName || flight.origin || '???';
+      const destDisplay = flight.destinationName || flight.destination || '???';
+      lines.push(`   ${originDisplay} → ${destDisplay}`);
+    }
   }
   
-  // Aircraft type and registration
-  const aircraftInfo = [flight.aircraftType, flight.registration].filter(Boolean).join(' • ');
-  if (aircraftInfo) {
-    lines.push(aircraftInfo);
+  // Aircraft info with seats and age
+  const aircraftParts = [];
+  if (flight.aircraftType || flight.aircraftModel) {
+    aircraftParts.push(flight.aircraftModel || flight.aircraftType);
+  }
+  if (flight.seats) {
+    aircraftParts.push(`${flight.seats} seats`);
+  }
+  if (flight.aircraftAge) {
+    aircraftParts.push(`${flight.aircraftAge}yr`);
+  }
+  if (flight.registration) {
+    aircraftParts.push(flight.registration);
+  }
+  if (aircraftParts.length > 0) {
+    lines.push(`🛩️ ${aircraftParts.join(' • ')}`);
   }
   
   // Position info
@@ -56,21 +78,37 @@ function formatMessage(flight, event) {
     positionParts.push(`${flight.altitudeFt.toLocaleString()} ft`);
   }
   if (positionParts.length > 0) {
-    lines.push(positionParts.join(' • '));
+    lines.push(`📍 ${positionParts.join(' • ')}`);
+  }
+  
+  // Flight time and distance remaining
+  const timeParts = [];
+  if (flight.flightTimeElapsed) {
+    timeParts.push(`${flight.flightTimeElapsed} in air`);
+  }
+  if (flight.distanceRemaining) {
+    timeParts.push(`${flight.distanceRemaining} NM to go`);
+  }
+  if (timeParts.length > 0) {
+    lines.push(`⏱️ ${timeParts.join(' • ')}`);
   }
   
   // ETA
   if (flight.estimatedMinutesAway) {
-    lines.push(`Arriving in ~${flight.estimatedMinutesAway} min`);
+    lines.push(`🎯 Arriving in ~${flight.estimatedMinutesAway} min`);
   }
   
-  // Event reasons (consolidated)
-  if (event && event.reasons && event.reasons.length > 0) {
-    lines.push('');
-    lines.push(`📍 ${event.reasons.join(' • ')}`);
-  } else if (event && event.reason) {
-    lines.push('');
-    lines.push(`📍 ${event.reason}`);
+  // Delay status
+  if (flight.isDelayed && flight.delayMinutes > 0) {
+    lines.push(`⚠️ Delayed ${flight.delayMinutes} min`);
+  } else if (flight.isEarly && flight.delayMinutes < 0) {
+    lines.push(`✅ ${Math.abs(flight.delayMinutes)} min early`);
+  }
+  
+  // Destination weather
+  if (flight.destWeather) {
+    const w = flight.destWeather;
+    lines.push(`🌤️ ${flight.destination}: ${w.tempF}°F ${w.condition}`);
   }
   
   return lines.join('\n');
@@ -132,10 +170,8 @@ async function sendNotification(flight, event = {}, options = {}) {
     headers['Click'] = options.dashboardUrl;
   }
   
-  // Add airline logo as icon if available
-  if (flight.logoUrl) {
-    headers['Icon'] = flight.logoUrl;
-  }
+  // Note: Logo attachments from Clearbit don't work reliably with ntfy
+  // The airline name is included in the message instead
   
   // Add actions
   const actions = [];

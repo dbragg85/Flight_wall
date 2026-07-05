@@ -13,6 +13,7 @@ const os = require('os');
 const { fetchFlights } = require('./utils/flightApi');
 const { processFlights, loadActiveFlights, getRecentEvents } = require('./utils/flightLogic');
 const { sendNotification, sendTestNotification, sendBatchNotifications } = require('./utils/notifier');
+const { enrichFlightWithRoute } = require('./utils/routeLookup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -170,15 +171,21 @@ async function pollFlights() {
     if (events.length > 0) {
       console.log(`\n🔔 Sending ${events.length} notification(s)...`);
       
-      const notifications = events.map(e => ({
-        flight: e.flight,
-        event: e.event,
-        options: {
-          dashboardUrl: getDashboardUrl(),
-        },
-      }));
+      // Enrich flights with route data before sending notifications
+      const enrichedNotifications = await Promise.all(
+        events.map(async (e) => {
+          const enrichedFlight = await enrichFlightWithRoute(e.flight);
+          return {
+            flight: enrichedFlight,
+            event: e.event,
+            options: {
+              dashboardUrl: getDashboardUrl(),
+            },
+          };
+        })
+      );
       
-      notificationsSent = await sendBatchNotifications(notifications);
+      notificationsSent = await sendBatchNotifications(enrichedNotifications);
       
       // Store in recent notifications
       recentNotifications = [...events, ...recentNotifications].slice(0, 50);
