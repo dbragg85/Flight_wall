@@ -315,18 +315,20 @@ app.listen(PORT, '0.0.0.0', () => {
   }
   
   const safePollInterval = Math.max(pollInterval, 5);
+  const pollIntervalMs = safePollInterval * 60 * 1000;
   
-  // Schedule polling with node-cron
-  const cronExpression = `*/${safePollInterval} * * * *`;
-  console.log(`⏰ Scheduling polls every ${safePollInterval} minutes (cron: ${cronExpression})`);
+  // Use setInterval instead of node-cron for reliability
+  console.log(`⏰ Scheduling polls every ${safePollInterval} minutes (${pollIntervalMs}ms)`);
   
-  cron.schedule(cronExpression, () => {
-    pollFlights();
-  });
+  setInterval(() => {
+    pollFlights().catch(err => console.error('Poll error:', err));
+  }, pollIntervalMs);
   
   // Run initial poll after 5 seconds
   console.log('🔄 Initial poll in 5 seconds...\n');
-  setTimeout(pollFlights, 5000);
+  setTimeout(() => {
+    pollFlights().catch(err => console.error('Initial poll error:', err));
+  }, 5000);
 });
 
 // Handle graceful shutdown
